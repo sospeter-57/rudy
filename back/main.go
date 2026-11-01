@@ -19,11 +19,8 @@ func main() {
 
 	handler := routes.NewRouter(routes.Deps{Logger: logger})
 
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
-	}
-
+	port := "8080"
+	
 	srv := &http.Server{
 		Addr:              ":" + port,
 		Handler:           handler,
