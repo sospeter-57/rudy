@@ -1,5 +1,5 @@
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   FolderKanban,
   BarChart3,
@@ -12,6 +12,7 @@ import {
   ShieldCheck,
   Sparkles,
   UserRound,
+  X,
 } from 'lucide-react'
 import { api } from '@/lib/api'
 import { cx } from '@/lib/cx'
@@ -123,7 +124,7 @@ export function SideRail() {
   )
 }
 
-export function TopBar() {
+export function TopBar({ onMenuOpen }: { onMenuOpen?: () => void }) {
   const user = useSession((state) => state.user)
   const { data: me } = useMe()
   const current = me ?? user
@@ -134,6 +135,16 @@ export function TopBar() {
 
   return (
     <header className="topbar">
+      <button
+        type="button"
+        className="mobile-menu-button"
+        onClick={onMenuOpen}
+        aria-label="Open menu"
+      >
+        <span />
+        <span />
+        <span />
+      </button>
       <div className="topbar__crumbs">
         {crumbs.map((crumb, index) => (
           <span key={`${crumb}-${index}`} className={cx('topbar__crumb', index === crumbs.length - 1 && 'topbar__crumb--last')}>
@@ -161,18 +172,53 @@ export function TopBar() {
   )
 }
 
-export function MobileNav() {
+export function MobileDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { data: unread = 0 } = useChatUnread()
+  const location = useLocation()
+
+  useEffect(() => {
+    if (!open) return
+    function handleKey(event: KeyboardEvent) {
+      if (event.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', handleKey)
+    return () => document.removeEventListener('keydown', handleKey)
+  }, [open, onClose])
+
+  useEffect(() => {
+    if (open) onClose()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname])
+
+  if (!open) return null
+
   return (
-    <nav className="mobile-nav" aria-label="Primary mobile">
-      {NAV.map(({ to, label, icon: Icon }) => (
-        <NavLink key={to} to={to} className={({ isActive }) => cx('mobile-nav__link', isActive && 'mobile-nav__link--active')}>
-          <Icon size={18} strokeWidth={1.6} />
-          <span>{label}</span>
-          {to === '/chat' && unread > 0 ? <span className="mobile-nav__badge">{unread > 9 ? '9+' : unread}</span> : null}
-        </NavLink>
-      ))}
-    </nav>
+    <div className="mobile-drawer" role="dialog" aria-modal="true" aria-label="Primary navigation">
+      <button type="button" className="mobile-drawer__backdrop" onClick={onClose} aria-label="Close menu" />
+      <nav className="mobile-drawer__panel">
+        <div className="mobile-drawer__head">
+          <span className="rail__mark">R</span>
+          <span className="mobile-drawer__title">RUDY</span>
+          <button type="button" className="mobile-drawer__close" onClick={onClose} aria-label="Close menu">
+            <X size={18} />
+          </button>
+        </div>
+        <div className="mobile-drawer__links">
+          {NAV.map(({ to, label, icon: Icon }) => (
+            <NavLink
+              key={to}
+              to={to}
+              onClick={onClose}
+              className={({ isActive }) => cx('mobile-drawer__link', isActive && 'mobile-drawer__link--active')}
+            >
+              <Icon size={18} strokeWidth={1.6} />
+              <span>{label}</span>
+              {to === '/chat' && unread > 0 ? <span className="mobile-nav__badge">{unread > 9 ? '9+' : unread}</span> : null}
+            </NavLink>
+          ))}
+        </div>
+      </nav>
+    </div>
   )
 }
 
@@ -189,17 +235,25 @@ function ThemeSync() {
 }
 
 export function AppShell() {
+  const location = useLocation()
+  const [mobileOpen, setMobileOpen] = useState(false)
+
   useChatStream()
+
+  useEffect(() => {
+    setMobileOpen(false)
+  }, [location.pathname])
+
   return (
     <div className="shell">
       <ThemeSync />
       <SideRail />
       <div className="shell__main">
-        <TopBar />
+        <TopBar onMenuOpen={() => setMobileOpen(true)} />
         <main className="page">
           <Outlet />
         </main>
-        <MobileNav />
+        <MobileDrawer open={mobileOpen} onClose={() => setMobileOpen(false)} />
       </div>
     </div>
   )
