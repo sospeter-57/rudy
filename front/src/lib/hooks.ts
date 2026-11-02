@@ -111,6 +111,9 @@ export function useChatMessages(roomId: number) {
     queryKey: ['chat-messages', roomId],
     queryFn: () => api.listChatMessages(roomId, undefined, 50),
     enabled: roomId > 0,
+    // SSE is the live path. This short fallback keeps an open conversation
+    // fresh if the stream is unavailable (stale server, blocked proxy, etc.).
+    refetchInterval: 10_000,
   })
 }
 
@@ -157,6 +160,7 @@ export function useChatStream() {
     const controller = new AbortController()
     let retry: ReturnType<typeof setTimeout> | undefined
     let closed = false
+    let connectedOnce = false
 
     const refresh = (roomId: number | null) => {
       void queryClient.invalidateQueries({ queryKey: ['chats'] })
@@ -168,11 +172,28 @@ export function useChatStream() {
       }
     }
 
+    // After a reconnect, refetch every room and conversation. Events sent while
+    // the stream was down are not replayed, so this closes the gap.
+    const refreshAll = () => {
+      void queryClient.invalidateQueries({ queryKey: ['chats'] })
+      void queryClient.invalidateQueries({ queryKey: ['chat'] })
+      void queryClient.invalidateQueries({ queryKey: ['chat-messages'] })
+      void queryClient.invalidateQueries({ queryKey: ['chat-unread'] })
+      void queryClient.invalidateQueries({ queryKey: ['chat-requests'] })
+    }
+
     const connect = async () => {
       try {
-        await api.streamChatEvents((event) => {
-          refresh(eventRoomID(event.data))
-        }, controller.signal)
+        await api.streamChatEvents(
+          (event) => {
+            refresh(eventRoomID(event.data))
+          },
+          controller.signal,
+          () => {
+            if (connectedOnce) refreshAll()
+            connectedOnce = true
+          },
+        )
       } catch {
         // Aborts are expected on unmount; anything else retries.
       }

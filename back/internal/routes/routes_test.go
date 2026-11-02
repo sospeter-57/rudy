@@ -455,3 +455,118 @@ func TestChatEventStreamStartsThroughMiddleware(t *testing.T) {
 		t.Fatalf("first frame = %q, want event: ready", strings.TrimSpace(line))
 	}
 }
+
+func TestChatEventStreamDeliversMessages(t *testing.T) {
+	api := newTestAPI(t)
+
+	register := func(username string) (int64, string) {
+		t.Helper()
+		status, payload := api.do(t, http.MethodPost, "/register", "", map[string]any{
+			"username": username,
+			"password": "password123",
+			"role":     "Frontend Engineer",
+		})
+		if status != http.StatusCreated {
+			t.Fatalf("register %s: %d (%v)", username, status, payload)
+		}
+		user, _ := payload["user"].(map[string]any)
+		id, _ := user["id"].(float64)
+		token, _ := payload["token"].(string)
+		if id == 0 || token == "" {
+			t.Fatalf("register %s returned %v", username, payload)
+		}
+		return int64(id), token
+	}
+
+	_, senderToken := register("sender")
+	receiverID, receiverToken := register("receiver")
+
+	status, payload := api.do(t, http.MethodPost, "/chat/dm", senderToken, map[string]any{"userId": receiverID})
+	if status != http.StatusOK {
+		t.Fatalf("open dm: %d (%v)", status, payload)
+	}
+	room, _ := payload["room"].(map[string]any)
+	roomID, _ := room["id"].(float64)
+	if roomID == 0 {
+		t.Fatalf("open dm returned %v", payload)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, api.server.URL+"/chat/events", nil)
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	request.Header.Set("Authorization", "Bearer "+receiverToken)
+
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("stream: %v", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("stream status = %d, want 200", response.StatusCode)
+	}
+
+	type frame struct {
+		name string
+		data string
+	}
+	frames := make(chan frame, 16)
+	go func() {
+		reader := bufio.NewReader(response.Body)
+		name := ""
+		for {
+			line, err := reader.ReadString('\n')
+			if err != nil {
+				close(frames)
+				return
+			}
+			line = strings.TrimSpace(line)
+			if strings.HasPrefix(line, "event:") {
+				name = strings.TrimSpace(strings.TrimPrefix(line, "event:"))
+				continue
+			}
+			if strings.HasPrefix(line, "data:") {
+				frames <- frame{name: name, data: strings.TrimSpace(strings.TrimPrefix(line, "data:"))}
+			}
+		}
+	}()
+
+	nextFrame := func() frame {
+		t.Helper()
+		select {
+		case got, ok := <-frames:
+			if !ok {
+				t.Fatal("event stream closed")
+			}
+			return got
+		case <-time.After(5 * time.Second):
+			t.Fatal("timed out waiting for an event")
+			return frame{}
+		}
+	}
+
+	if ready := nextFrame(); ready.name != "ready" {
+		t.Fatalf("first event = %q, want ready", ready.name)
+	}
+
+	status, payload = api.do(t, http.MethodPost, "/chat/"+strconv.FormatInt(int64(roomID), 10)+"/messages", senderToken, map[string]any{
+		"body": "delivered live",
+	})
+	if status != http.StatusCreated {
+		t.Fatalf("send message: %d (%v)", status, payload)
+	}
+
+	for {
+		event := nextFrame()
+		if event.name != "message.created" {
+			continue
+		}
+		if !strings.Contains(event.data, "delivered live") {
+			t.Fatalf("message event = %s", event.data)
+		}
+		return
+	}
+}

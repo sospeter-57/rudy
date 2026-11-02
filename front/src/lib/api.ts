@@ -116,7 +116,11 @@ export interface ApiClient {
   markChatRead(roomId: number, messageId: number): Promise<void>
   uploadChatAttachment(roomId: number, file: File): Promise<ChatAttachment>
   fetchChatAttachment(attachmentId: number): Promise<Blob>
-  streamChatEvents(onEvent: (event: ChatStreamEvent) => void, signal: AbortSignal): Promise<void>
+  streamChatEvents(
+    onEvent: (event: ChatStreamEvent) => void,
+    signal: AbortSignal,
+    onOpen?: () => void,
+  ): Promise<void>
 }
 
 const BASE = config.apiBase
@@ -181,6 +185,7 @@ async function requestBlob(path: string): Promise<Blob> {
 async function streamChatEvents(
   onEvent: (event: ChatStreamEvent) => void,
   signal: AbortSignal,
+  onOpen?: () => void,
 ): Promise<void> {
   const token = getToken()
   const headers = new Headers({ Accept: 'text/event-stream' })
@@ -194,6 +199,10 @@ async function streamChatEvents(
     }
     throw new ApiError(response.status, `Chat stream failed (${response.status})`)
   }
+
+  // The server has accepted the subscription by the time the headers arrive,
+  // so this is the safe point to resync anything missed while disconnected.
+  onOpen?.()
 
   const reader = response.body.pipeThrough(new TextDecoderStream()).getReader()
   let buffer = ''

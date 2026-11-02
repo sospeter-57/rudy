@@ -75,7 +75,7 @@ tasks or projects.
 | `usePreferences()` | `['preferences']` | `GET /me/preferences` |
 | `useStats(range)` | `['stats', range]` | `GET /stats?range=7d\|30d\|90d\|all` |
 | `useChats()` / `useChat(id)` | `['chats']`, `['chat', id]` | Your rooms / one room |
-| `useChatMessages(id)` | `['chat-messages', id]` | `GET /chat/{id}/messages` |
+| `useChatMessages(id)` | `['chat-messages', id]` | `GET /chat/{id}/messages`, polls every 10s as an SSE fallback |
 | `useChatUnread()` | `['chat-unread']` | `GET /chat/unread`, polls every 30s |
 | `useChatRequests()` | `['chat-requests']` | `GET /chat/requests` |
 | `useProjectMembers(id)` | `['project-members', id]` | `GET /project/{id}/members` |
@@ -83,7 +83,9 @@ tasks or projects.
 | `useChatStream()` | n/a | Authenticated SSE; invalidates chat queries |
 
 `useChatStream` runs once in `AppShell`. It reconnects after a dropped stream and
-refetches on reconnect, so a client that missed events still converges.
+invalidates every room and conversation when a connection opens again, so a
+client that missed events still converges. The open conversation also polls every
+10 seconds as a fallback if the stream is blocked or a stale server returns `500`.
 
 Mutations call `api.*` directly and then invalidate the relevant keys. Keep this
 pattern: the API is the source of truth, and optimistic data is never invented
