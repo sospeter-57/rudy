@@ -175,6 +175,8 @@ export function TopBar({ onMenuOpen }: { onMenuOpen?: () => void }) {
 export function MobileDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { data: unread = 0 } = useChatUnread()
   const location = useLocation()
+  const navigate = useNavigate()
+  const signOut = useSession((state) => state.signOut)
 
   useEffect(() => {
     if (!open) return
@@ -216,6 +218,24 @@ export function MobileDrawer({ open, onClose }: { open: boolean; onClose: () => 
               {to === '/chat' && unread > 0 ? <span className="mobile-nav__badge">{unread > 9 ? '9+' : unread}</span> : null}
             </NavLink>
           ))}
+        </div>
+        <div className="mobile-drawer__foot">
+          <button
+            type="button"
+            className="mobile-drawer__signout"
+            onClick={async () => {
+              try {
+                await api.logout()
+              } catch {
+                // Local session is cleared either way.
+              }
+              signOut()
+              navigate('/')
+              onClose()
+            }}
+          >
+            Sign out
+          </button>
         </div>
       </nav>
     </div>

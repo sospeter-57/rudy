@@ -1058,6 +1058,31 @@ h3 {
   display: none;
 }
 
+.profile-signout {
+  display: flex;
+  justify-content: center;
+  padding-top: 1rem;
+}
+
+.mobile-drawer__foot {
+  margin-top: auto;
+  padding-top: 1rem;
+  border-top: 1px solid var(--line);
+}
+
+.mobile-drawer__signout {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  background: none;
+  border: 1px solid var(--line);
+  color: var(--bone-mute);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
 .mobile-menu-button {
   display: none;
 }

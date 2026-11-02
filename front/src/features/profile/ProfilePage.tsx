@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import {
   ArrowUpRight,
   BadgeCheck,
@@ -11,6 +11,8 @@ import {
   TrendingUp,
 } from 'lucide-react'
 import { useLeaderboard, useLedger, useMe, useProjects, useTasks, useUsers } from '@/lib/hooks'
+import { api } from '@/lib/api'
+import { useSession } from '@/lib/session'
 import { pendingRewards, tierFor, tierProgress, TIERS } from '@/lib/points'
 import { pointsLabel, relativeDate } from '@/lib/format'
 import { PageHeader } from '@/components/layout'
@@ -19,6 +21,8 @@ import { Leaderboard, LedgerTable, TierBadge } from '@/components/points'
 import { cx } from '@/lib/cx'
 
 export function ProfilePage() {
+  const navigate = useNavigate()
+  const signOut = useSession((state) => state.signOut)
   const { data: me, isLoading } = useMe()
   const { data: ledger = [] } = useLedger(me?.id ?? 0)
   const { data: leaderboard = [] } = useLeaderboard()
@@ -250,6 +254,24 @@ export function ProfilePage() {
             </div>
           </section>
         </aside>
+      </div>
+
+      <div className="profile-signout">
+        <button
+          type="button"
+          className="btn btn--outline btn--md"
+          onClick={async () => {
+            try {
+              await api.logout()
+            } catch {
+              // Local session is cleared either way.
+            }
+            signOut()
+            navigate('/')
+          }}
+        >
+          Sign out
+        </button>
       </div>
     </div>
   )
