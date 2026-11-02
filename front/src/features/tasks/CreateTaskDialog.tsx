@@ -52,7 +52,6 @@ export function CreateTaskDialog({
       api.createTask(
         selectedProject,
         { description, taskType, role, points, dependencies },
-        me!.id,
       ),
     onSuccess: (task) => {
       queryClient.invalidateQueries({ queryKey: ['tasks'] })

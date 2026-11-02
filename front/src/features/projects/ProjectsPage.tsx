@@ -19,7 +19,7 @@ export function CreateProjectDialog({ open, onClose }: { open: boolean; onClose:
   const [error, setError] = useState<string | null>(null)
 
   const mutation = useMutation({
-    mutationFn: () => api.createProject({ name, description, ttl }, me!.id),
+    mutationFn: () => api.createProject({ name, description, ttl }),
     onSuccess: (project) => {
       queryClient.invalidateQueries({ queryKey: ['projects'] })
       toast('Project created', `${project.name} is on the board.`, 'gold')

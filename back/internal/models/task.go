@@ -1,150 +1,107 @@
 package models
 
 import (
-	"errors"
+	"strings"
 	"time"
 )
-type Task struct {
-	Id int64					`json:"id"`
-	Description string			`json:"description"`
-	TaskType TaskType			`json:"task_type"`
-	TaskState TaskState			`json:"task_state"`
-	Creator User				`json:"creator"`
-	Assignee *User				`json:"assignee"`
-	Role string					`json:"role"` // to make clear what roles someone has been working on for analysis
-	Points int					`json:"points"`
-	Dependencies []Task			`json:"dependencies"`
-	AcceptanceCriteria Done		`json:"acceptance_criteria"`
-	CreatedAt time.Time			`json:"created_at"`
-	CompleteAt time.Time		`json:"completed_at"`
-}
 
-type TaskType string;
+type TaskType string
 
 const (
-	Feature TaskType = "feature"
-	Bug TaskType = "bug"
-	Fix TaskType = "fix"
+	Feature  TaskType = "feature"
+	Bug      TaskType = "bug"
+	Fix      TaskType = "fix"
 	Research TaskType = "research"
 )
 
-type TaskState string;
+func IsTaskType(value TaskType) bool {
+	switch value {
+	case Feature, Bug, Fix, Research:
+		return true
+	}
+	return false
+}
+
+type TaskState string
 
 const (
-	Pending TaskState = "pending"
-	Auditing TaskState = "auditing"
+	Pending   TaskState = "pending"
+	Auditing  TaskState = "auditing"
 	Completed TaskState = "completed"
 )
 
-type Done struct {
-	CodeImplementation string
-	Tests string
-	Reviewers []User
-	Documentation string
+type ApprovalState string
+
+const (
+	Proposed         ApprovalState = "proposed"
+	Approved         ApprovalState = "approved"
+	ChangesRequested ApprovalState = "changes_requested"
+)
+
+type ReviewDecision string
+
+const (
+	ReviewPending          ReviewDecision = "pending"
+	ReviewApproved         ReviewDecision = "approved"
+	ReviewChangesRequested ReviewDecision = "changes_requested"
+)
+
+type Review struct {
+	UserID    int64          `json:"userId"`
+	Decision  ReviewDecision `json:"decision"`
+	Comment   string         `json:"comment,omitempty"`
+	DecidedAt *time.Time     `json:"decidedAt,omitempty"`
 }
 
-type TaskMethods interface {
-	assign(user *User, task Task)
-	audit()
-	complete()
-	ttl()
-	noteCode(string)
-	noteTests(string)
-	noteReviewer(User)
-	noteDocumentation()
-	ifDone() bool
+type Acceptance struct {
+	Code          string   `json:"code"`
+	Tests         string   `json:"tests"`
+	Documentation string   `json:"documentation"`
+	Reviewers     []Review `json:"reviewers"`
 }
 
+type Task struct {
+	ID              int64         `json:"id"`
+	ProjectID       int64         `json:"projectId"`
+	Description     string        `json:"description"`
+	TaskType        TaskType      `json:"taskType"`
+	TaskState       TaskState     `json:"taskState"`
+	ApprovalState   ApprovalState `json:"approvalState"`
+	CreatorID       int64         `json:"creatorId"`
+	AssigneeID      *int64        `json:"assigneeId"`
+	Role            Role          `json:"role"`
+	Points          int           `json:"points"`
+	Dependencies    []int64       `json:"dependencies"`
+	Acceptance      Acceptance    `json:"acceptance"`
+	RejectionReason string        `json:"rejectionReason,omitempty"`
+	CreatedAt       time.Time     `json:"createdAt"`
+	CompletedAt     *time.Time    `json:"completedAt,omitempty"`
+}
 
-// this function checks the whether the user
-// has permission to crate a project, returns err if not authorized
-func CreateTask(description string, tasktype TaskType, creator, assignee User, role string, points int) (Task, error) {
-	newTask := Task {
-		Id: 0,
-		Description: description,
-		TaskType: tasktype,
-		TaskState: Pending,
-		Creator: creator,
-		Assignee: &assignee,
-		Role: role,
-		Points: points,
+func (t Task) GatesComplete() bool {
+	return strings.TrimSpace(t.Acceptance.Code) != "" &&
+		strings.TrimSpace(t.Acceptance.Tests) != "" &&
+		strings.TrimSpace(t.Acceptance.Documentation) != ""
+}
+
+func (t Task) AllReviewersApproved() bool {
+	for _, review := range t.Acceptance.Reviewers {
+		if review.Decision != ReviewApproved {
+			return false
+		}
 	}
-
-	return newTask, nil
+	return true
 }
 
-func (t *Task) assign(user *User) error {
-	if t.Assignee == user {
-		return errors.New(string(AlreadyAssigned))
+func ReviewBonus(taskPoints int) int {
+	bonus := int(float64(taskPoints)*0.15 + 0.5)
+	if bonus < 2 {
+		return 2
 	}
-
-	t.Assignee = user
-	return nil
+	return bonus
 }
 
-func (t *Task) audit() error {
-	if t.TaskState == Auditing {
-		return errors.New(string(AlreadyAudited))
-	}
-
-	if time.Now().After(t.CompleteAt) {
-		return errors.New(string(DurationAlreadyElapsed))
-	}
-
-	t.TaskState = Auditing
-	return nil
+type CompletionResult struct {
+	Task   Task          `json:"task"`
+	Awards []LedgerEntry `json:"awards"`
 }
-
-func (t *Task) complete() error {
-	if t.TaskState == Completed {
-		return errors.New(string(AlreadyCompleted))
-	}
-
-	t.TaskState = Completed
-	return nil
-}
-
-func (t *Task) ttl() float64 {
-	return t.CompleteAt.Sub(t.CreatedAt).Minutes()
-}
-
-func (t *Task) noteCode(code string) {
-	t.AcceptanceCriteria.CodeImplementation = code
-}
-
-func (t *Task) noteTests(tests string) {
-	t.AcceptanceCriteria.Tests = tests
-}
-
-func (t *Task) noteReviewer(reviewer User) {
-	t.AcceptanceCriteria.Reviewers = append(t.AcceptanceCriteria.Reviewers, reviewer)
-}
-
-func (t *Task) noteDocumentation(doc string) {
-	t.AcceptanceCriteria.Documentation = doc
-}
-
-func (t *Task) ifDone() bool {
-	if t.AcceptanceCriteria.CodeImplementation == "" {
-		return false
-	} else if t.AcceptanceCriteria.Tests == "" {
-		return false
-	} else if t.AcceptanceCriteria.Documentation == "" {
-		return false
-	} else if t.AcceptanceCriteria.Reviewers == nil {
-		return false
-	} else {
-		return true
-	}
-}
-
-// func (t *Task) advance() {
-// 	switch t.TaskState {
-// 		case Pending:
-// 			t.TaskState = Auditing
-// 		case Auditing:
-// 			t.TaskState = Completed
-// 		default:
-// 			t.TaskState = Pending
-// 	}
-// }

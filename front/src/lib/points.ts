@@ -1,3 +1,4 @@
+import { config } from './config'
 import type { Task, User } from './types'
 
 /**
@@ -17,8 +18,8 @@ import type { Task, User } from './types'
  * never pay out.
  */
 
-export const REVIEW_RATE = 0.15
-export const MIN_REVIEW_BONUS = 2
+export const REVIEW_RATE = config.reviewRate
+export const MIN_REVIEW_BONUS = config.minReviewBonus
 
 export function reviewBonusFor(taskPoints: number): number {
   return Math.max(MIN_REVIEW_BONUS, Math.round(taskPoints * REVIEW_RATE))

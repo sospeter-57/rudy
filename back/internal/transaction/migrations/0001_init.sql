@@ -1,0 +1,101 @@
+CREATE TABLE users (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    username      TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    password_hash TEXT NOT NULL,
+    role          TEXT NOT NULL,
+    points        INTEGER NOT NULL DEFAULT 0,
+    created_at    TEXT NOT NULL
+);
+
+CREATE TABLE sessions (
+    id           TEXT PRIMARY KEY,
+    user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token_hash   TEXT NOT NULL UNIQUE,
+    created_at   TEXT NOT NULL,
+    expires_at   TEXT NOT NULL,
+    last_used_at TEXT,
+    revoked_at   TEXT
+);
+
+CREATE INDEX idx_sessions_user ON sessions(user_id);
+CREATE INDEX idx_sessions_expires ON sessions(expires_at);
+
+CREATE TABLE projects (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT NOT NULL,
+    description TEXT NOT NULL,
+    ttl         INTEGER NOT NULL,
+    creator_id  INTEGER NOT NULL REFERENCES users(id),
+    created_at  TEXT NOT NULL
+);
+
+CREATE TABLE tasks (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id       INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    description      TEXT NOT NULL,
+    task_type        TEXT NOT NULL,
+    task_state       TEXT NOT NULL,
+    approval_state   TEXT NOT NULL,
+    creator_id       INTEGER NOT NULL REFERENCES users(id),
+    assignee_id      INTEGER REFERENCES users(id),
+    role             TEXT NOT NULL,
+    points           INTEGER NOT NULL,
+    rejection_reason TEXT,
+    created_at       TEXT NOT NULL,
+    completed_at     TEXT
+);
+
+CREATE INDEX idx_tasks_project ON tasks(project_id);
+CREATE INDEX idx_tasks_assignee ON tasks(assignee_id);
+CREATE INDEX idx_tasks_state ON tasks(task_state);
+CREATE INDEX idx_tasks_approval ON tasks(approval_state);
+
+CREATE TABLE task_acceptance (
+    task_id       INTEGER PRIMARY KEY REFERENCES tasks(id) ON DELETE CASCADE,
+    code          TEXT NOT NULL DEFAULT '',
+    tests         TEXT NOT NULL DEFAULT '',
+    documentation TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE task_reviewers (
+    task_id    INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    user_id    INTEGER NOT NULL REFERENCES users(id),
+    decision   TEXT NOT NULL DEFAULT 'pending',
+    comment    TEXT,
+    decided_at TEXT,
+    PRIMARY KEY (task_id, user_id)
+);
+
+CREATE INDEX idx_task_reviewers_user ON task_reviewers(user_id);
+
+CREATE TABLE task_dependencies (
+    task_id            INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    depends_on_task_id INTEGER NOT NULL REFERENCES tasks(id),
+    PRIMARY KEY (task_id, depends_on_task_id)
+);
+
+CREATE TABLE ledger_entries (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id    INTEGER NOT NULL REFERENCES users(id),
+    task_id    INTEGER REFERENCES tasks(id) ON DELETE SET NULL,
+    project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL,
+    reason     TEXT NOT NULL,
+    points     INTEGER NOT NULL,
+    note       TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX idx_ledger_user ON ledger_entries(user_id);
+CREATE INDEX idx_ledger_created ON ledger_entries(created_at);
+CREATE UNIQUE INDEX idx_ledger_unique_award
+    ON ledger_entries(task_id, user_id, reason)
+    WHERE task_id IS NOT NULL;
+
+CREATE TABLE user_preferences (
+    user_id    INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    theme_mode TEXT NOT NULL,
+    accent     TEXT NOT NULL,
+    blend_a    TEXT NOT NULL,
+    blend_b    TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);

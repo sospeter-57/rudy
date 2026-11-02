@@ -1,28 +1,73 @@
 package routes
 
-import (
-	"context"
+import "rudy/internal/models"
 
-	"rudy/internal/models"
-)
-
-// UserService is the part of the user domain the HTTP layer depends on.
-// Implementations are responsible for hashing and verifying passwords.
-type UserService interface {
-	Register(ctx context.Context, username, password string, role models.Role) (models.User, error)
-	Login(ctx context.Context, username, password string) (models.User, error)
+type credentialsRequest struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
 }
 
-// ProjectService is the part of the project domain the HTTP layer depends on.
-type ProjectService interface {
-	Project(ctx context.Context, id int64) (models.Project, error)
+type registerRequest struct {
+	Username string      `json:"username"`
+	Password string      `json:"password"`
+	Role     models.Role `json:"role"`
 }
 
-// TaskService is the part of the task domain the HTTP layer depends on.
-type TaskService interface {
-	UserTasks(ctx context.Context, userID int64) ([]models.Task, error)
-	SetCode(ctx context.Context, taskID int64, code string) (models.Task, error)
-	SetTests(ctx context.Context, taskID int64, tests string) (models.Task, error)
-	AddReviewer(ctx context.Context, taskID, reviewerID int64) (models.Task, error)
-	SetDocumentation(ctx context.Context, taskID int64, documentation string) (models.Task, error)
+type projectRequest struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	TTL         int    `json:"ttl"`
+}
+
+type taskRequest struct {
+	Description  string          `json:"description"`
+	TaskType     models.TaskType `json:"taskType"`
+	Role         models.Role     `json:"role"`
+	Points       int             `json:"points"`
+	Dependencies []int64         `json:"dependencies"`
+}
+
+type assignRequest struct {
+	AssigneeID int64 `json:"assignee_id"`
+}
+
+type reviewerRequest struct {
+	ReviewerID int64 `json:"reviewer_id"`
+}
+
+type rejectRequest struct {
+	Reason string `json:"reason"`
+}
+
+type codeRequest struct {
+	Code string `json:"code"`
+}
+
+type testsRequest struct {
+	Tests string `json:"tests"`
+}
+
+type documentationRequest struct {
+	Documentation string `json:"documentation"`
+}
+
+type reviewRequest struct {
+	Decision models.ReviewDecision `json:"decision"`
+	Comment  string                `json:"comment"`
+}
+
+type preferencesRequest struct {
+	ThemeMode models.ThemeMode `json:"themeMode"`
+	Accent    string           `json:"accent"`
+	BlendA    string           `json:"blendA"`
+	BlendB    string           `json:"blendB"`
+}
+
+func (r preferencesRequest) Preferences() models.Preferences {
+	return models.Preferences{
+		ThemeMode: r.ThemeMode,
+		Accent:    r.Accent,
+		BlendA:    r.BlendA,
+		BlendB:    r.BlendB,
+	}
 }

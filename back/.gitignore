@@ -1,0 +1,7 @@
+.env
+.env.*
+!.env.example
+rudy.db
+rudy.db-shm
+rudy.db-wal
+rudy

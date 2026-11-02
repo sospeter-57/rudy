@@ -24,6 +24,7 @@ import { api } from '@/lib/api'
 import { useMe, useProject, useTask, useUsers } from '@/lib/hooks'
 import {
   canAddReviewer,
+  canEditAcceptance,
   canFinalize,
   canReview,
   canSubmitForReview,
@@ -101,49 +102,49 @@ export function TaskDetailPage() {
   }
 
   const setGateMutation = useMutation({
-    mutationFn: ({ gate, value }: { gate: Gate; value: string }) => api.setGate(taskId, gate, value, me!.id),
+    mutationFn: ({ gate, value }: { gate: Gate; value: string }) => api.setGate(taskId, gate, value),
     onSuccess: () => { invalidate(); setGateDialog(null); toast('Gate updated', 'The acceptance criteria moved forward.', 'gold') },
     onError: (err) => toast('Could not save', err instanceof Error ? err.message : 'Try again.', 'red'),
   })
 
   const approveMutation = useMutation({
-    mutationFn: () => api.approveTask(taskId, me!.id),
+    mutationFn: () => api.approveTask(taskId),
     onSuccess: () => { invalidate(); toast('Task approved', 'It is now fit to be worked on.', 'gold') },
     onError: (err) => toast('Could not approve', err instanceof Error ? err.message : 'Try again.', 'red'),
   })
 
   const rejectMutation = useMutation({
-    mutationFn: () => api.rejectTask(taskId, rejectReason, me!.id),
+    mutationFn: () => api.rejectTask(taskId, rejectReason),
     onSuccess: () => { invalidate(); setRejectOpen(false); setRejectReason(''); toast('Sent back for changes', 'The creator has your reason.', 'red') },
     onError: (err) => toast('Could not reject', err instanceof Error ? err.message : 'Try again.', 'red'),
   })
 
   const assignMutation = useMutation({
-    mutationFn: () => api.assignTask(taskId, assignee, me!.id),
+    mutationFn: () => api.assignTask(taskId, assignee),
     onSuccess: (updated) => { invalidate(); toast('Assigned', `${userById.get(updated.assigneeId ?? 0)?.username ?? 'Someone'} owns this now.`, 'gold') },
     onError: (err) => toast('Could not assign', err instanceof Error ? err.message : 'Try again.', 'red'),
   })
 
   const reviewerMutation = useMutation({
-    mutationFn: () => api.addReviewer(taskId, reviewerId, me!.id),
+    mutationFn: () => api.addReviewer(taskId, reviewerId),
     onSuccess: () => { invalidate(); setReviewerOpen(false); toast('Reviewer added', 'They will be asked to sign off.', 'gold') },
     onError: (err) => toast('Could not add reviewer', err instanceof Error ? err.message : 'Try again.', 'red'),
   })
 
   const removeReviewerMutation = useMutation({
-    mutationFn: (userId: number) => api.removeReviewer(taskId, userId, me!.id),
+    mutationFn: (userId: number) => api.removeReviewer(taskId, userId),
     onSuccess: () => { invalidate(); toast('Reviewer removed', undefined, 'bone') },
     onError: (err) => toast('Could not remove reviewer', err instanceof Error ? err.message : 'Try again.', 'red'),
   })
 
   const submitMutation = useMutation({
-    mutationFn: () => api.submitForReview(taskId, me!.id),
+    mutationFn: () => api.submitForReview(taskId),
     onSuccess: () => { invalidate(); toast('Sent to review', 'Every reviewer has been notified.', 'gold') },
     onError: (err) => toast('Could not submit', err instanceof Error ? err.message : 'Try again.', 'red'),
   })
 
   const decideMutation = useMutation({
-    mutationFn: () => api.decideReview(taskId, me!.id, reviewDecision, reviewComment),
+    mutationFn: () => api.decideReview(taskId, reviewDecision, reviewComment),
     onSuccess: () => {
       invalidate()
       setReviewOpen(false)
@@ -158,7 +159,7 @@ export function TaskDetailPage() {
   })
 
   const completeMutation = useMutation({
-    mutationFn: () => api.completeTask(taskId, me!.id),
+    mutationFn: () => api.completeTask(taskId),
     onSuccess: (result) => {
       invalidate()
       queryClient.invalidateQueries({ queryKey: ['me'] })
@@ -306,7 +307,7 @@ export function TaskDetailPage() {
                         <strong>{meta.label}</strong>
                         <span>{meta.hint}</span>
                       </div>
-                      {canWorkOn(task, me) && task.taskState !== 'completed' ? (
+                      {canEditAcceptance(task, me) ? (
                         <Button size="sm" variant="ghost" onClick={() => setGateDialog({ gate, value })}>
                           {done ? 'Edit' : 'Add'}
                         </Button>
@@ -338,7 +339,7 @@ export function TaskDetailPage() {
             </header>
             {task.acceptance.reviewers.length === 0 ? (
               <p className="muted-copy">
-                No reviewers yet. {canAddReviewer(task, me) ? 'Add at least one before sending the task to review.' : 'The assignee or a manager can add them.'}
+                No reviewers yet. {canAddReviewer(task, me) ? 'Add at least one before sending the task to review.' : 'Reviewers can be added once a manager approves the task.'}
               </p>
             ) : (
               <div className="reviewer-list">

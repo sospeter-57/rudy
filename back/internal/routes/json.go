@@ -68,19 +68,19 @@ func (s *server) respondError(w http.ResponseWriter, err error) {
 }
 
 func mapError(err error) (int, string) {
-	var rudyErr models.RudyError
-	if errors.As(err, &rudyErr) {
-		switch rudyErr {
-		case models.NotFound:
-			return http.StatusNotFound, rudyErr.Error()
-		case models.InvalidCredentials:
-			return http.StatusUnauthorized, rudyErr.Error()
-		case models.DuplicateUsername:
-			return http.StatusConflict, rudyErr.Error()
-		case models.InvalidInput:
-			return http.StatusBadRequest, rudyErr.Error()
-		case models.AlreadyCompleted, models.AlreadyAudited, models.AlreadyAssigned, models.DurationAlreadyElapsed:
-			return http.StatusConflict, rudyErr.Error()
+	var appErr *models.AppError
+	if errors.As(err, &appErr) {
+		switch appErr.Kind {
+		case models.KindNotFound:
+			return http.StatusNotFound, appErr.Message
+		case models.KindUnauthorized:
+			return http.StatusUnauthorized, appErr.Message
+		case models.KindForbidden:
+			return http.StatusForbidden, appErr.Message
+		case models.KindConflict:
+			return http.StatusConflict, appErr.Message
+		case models.KindValidation:
+			return http.StatusUnprocessableEntity, appErr.Message
 		}
 	}
 

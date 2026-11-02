@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowRight, Check, Crown, ShieldCheck, Sparkles } from 'lucide-react'
+import { ArrowRight } from 'lucide-react'
 import { api } from '@/lib/api'
 import { ROLES, type Role } from '@/lib/types'
 import { useSession } from '@/lib/session'
@@ -11,7 +11,7 @@ type Mode = 'login' | 'register'
 
 export function LandingPage() {
   const user = useSession((state) => state.user)
-  const setUser = useSession((state) => state.setUser)
+  const setSession = useSession((state) => state.setSession)
   const navigate = useNavigate()
 
   const [mode, setMode] = useState<Mode>('login')
@@ -33,21 +33,7 @@ export function LandingPage() {
       const next = mode === 'login'
         ? await api.login(username, password)
         : await api.register({ username, password, role })
-      setUser(next)
-      navigate('/dashboard', { replace: true })
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong.')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function quickLogin(name: string) {
-    setError(null)
-    setBusy(true)
-    try {
-      const next = await api.login(name, 'password123')
-      setUser(next)
+      setSession(next.user, next.token)
       navigate('/dashboard', { replace: true })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong.')
@@ -187,31 +173,6 @@ export function LandingPage() {
               {!busy ? <ArrowRight size={16} /> : null}
             </Button>
           </form>
-
-          <div className="auth__demo">
-            <span className="eyebrow">Or walk the demo</span>
-            <div className="auth__demo-grid">
-              <button className="demo-card" onClick={() => quickLogin('nova')} disabled={busy}>
-                <Crown size={16} />
-                <div>
-                  <strong>Nova</strong>
-                  <span>Project Manager</span>
-                </div>
-                <Check size={14} className="demo-card__check" />
-              </button>
-              <button className="demo-card" onClick={() => quickLogin('ari')} disabled={busy}>
-                <Sparkles size={16} />
-                <div>
-                  <strong>Ari</strong>
-                  <span>Frontend Engineer</span>
-                </div>
-                <Check size={14} className="demo-card__check" />
-              </button>
-            </div>
-            <p className="auth__demo-hint">
-              <ShieldCheck size={13} /> Both use password <code>password123</code>
-            </p>
-          </div>
         </div>
       </section>
     </div>

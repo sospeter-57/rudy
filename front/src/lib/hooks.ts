@@ -2,14 +2,14 @@ import { useQuery } from '@tanstack/react-query'
 import { useEffect } from 'react'
 import { api } from './api'
 import { useSession } from './session'
-import type { Task } from './types'
+import type { StatsRange, Task } from './types'
 
 export function useMe() {
   const user = useSession((state) => state.user)
   const refreshUser = useSession((state) => state.refreshUser)
   const query = useQuery({
     queryKey: ['me', user?.id],
-    queryFn: () => api.me(user!.id),
+    queryFn: () => api.me(),
     enabled: !!user,
     staleTime: 5_000,
   })
@@ -21,10 +21,6 @@ export function useMe() {
   }, [query.data, user, refreshUser])
 
   return query
-}
-
-export function useActorId(): number {
-  return useSession((state) => state.user?.id ?? 0)
 }
 
 export function useProjects() {
@@ -61,4 +57,20 @@ export function useLedger(userId: number) {
 
 export function useLeaderboard() {
   return useQuery({ queryKey: ['leaderboard'], queryFn: () => api.leaderboard() })
+}
+
+export function usePreferences() {
+  return useQuery({
+    queryKey: ['preferences'],
+    queryFn: () => api.getPreferences(),
+    staleTime: 60_000,
+  })
+}
+
+export function useStats(range: StatsRange) {
+  return useQuery({
+    queryKey: ['stats', range],
+    queryFn: () => api.getStats(range),
+    staleTime: 15_000,
+  })
 }

@@ -24,12 +24,21 @@ export function canWorkOn(task: Task, user: User | null | undefined): boolean {
   return !!user && (isAssignee(task, user) || isManager(user))
 }
 
+/**
+ * Acceptance evidence and reviewers may only be edited after a manager has
+ * approved the task and before the assignee submits it for review. This is the
+ * approval-first rule the UI previously ignored.
+ */
+export function canEditAcceptance(task: Task, user: User | null | undefined): boolean {
+  return canWorkOn(task, user) && task.approvalState === 'approved' && task.taskState === 'pending'
+}
+
 export function canReview(task: Task, user: User | null | undefined): boolean {
   return !!user && task.acceptance.reviewers.some((review) => review.userId === user.id)
 }
 
 export function canAddReviewer(task: Task, user: User | null | undefined): boolean {
-  return canWorkOn(task, user)
+  return canEditAcceptance(task, user)
 }
 
 export function gatesComplete(task: Task): boolean {

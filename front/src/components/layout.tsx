@@ -1,19 +1,23 @@
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import {
   FolderKanban,
+  BarChart3,
   LayoutDashboard,
   ListChecks,
   LogOut,
   Plus,
+  Settings,
   ShieldCheck,
   Sparkles,
   UserRound,
 } from 'lucide-react'
+import { api } from '@/lib/api'
 import { cx } from '@/lib/cx'
-import { useMe } from '@/lib/hooks'
+import { useMe, usePreferences } from '@/lib/hooks'
 import { tierFor, tierProgress } from '@/lib/points'
 import { useSession } from '@/lib/session'
+import { applyTheme, watchSystemTheme } from '@/lib/theme'
 import { Avatar, Button } from '@/components/ui'
 
 const NAV = [
@@ -21,7 +25,9 @@ const NAV = [
   { to: '/projects', label: 'Projects', icon: FolderKanban },
   { to: '/tasks', label: 'Tasks', icon: ListChecks },
   { to: '/review', label: 'Review', icon: ShieldCheck },
+  { to: '/stats', label: 'Stats', icon: BarChart3 },
   { to: '/profile', label: 'Profile', icon: UserRound },
+  { to: '/settings', label: 'Settings', icon: Settings },
 ]
 
 function useCrumbs(): string[] {
@@ -31,7 +37,9 @@ function useCrumbs(): string[] {
   if (pathname.startsWith('/projects')) return ['Projects']
   if (pathname.startsWith('/tasks')) return ['Tasks']
   if (pathname.startsWith('/review')) return ['Review']
+  if (pathname.startsWith('/stats')) return ['Stats']
   if (pathname.startsWith('/profile')) return ['Profile']
+  if (pathname.startsWith('/settings')) return ['Settings']
   return ['Dashboard']
 }
 
@@ -90,7 +98,18 @@ export function SideRail() {
             {progress.next ? `${progress.remaining} pts to ${progress.next.name}` : 'Top tier reached'}
           </span>
         </div>
-        <button className="rail__signout" onClick={() => { signOut(); navigate('/') }}>
+        <button
+          className="rail__signout"
+          onClick={async () => {
+            try {
+              await api.logout()
+            } catch {
+              // The local session is cleared either way.
+            }
+            signOut()
+            navigate('/')
+          }}
+        >
           <LogOut size={15} />
           <span>Sign out</span>
         </button>
@@ -150,9 +169,22 @@ export function MobileNav() {
   )
 }
 
+function ThemeSync() {
+  const { data } = usePreferences()
+
+  useEffect(() => {
+    if (!data) return
+    applyTheme(data)
+    return watchSystemTheme(data, () => applyTheme(data))
+  }, [data])
+
+  return null
+}
+
 export function AppShell() {
   return (
     <div className="shell">
+      <ThemeSync />
       <SideRail />
       <div className="shell__main">
         <TopBar />

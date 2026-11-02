@@ -1,31 +1,24 @@
 import { useMemo } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
-import { useQueryClient } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
 import {
   ArrowUpRight,
   BadgeCheck,
   CircleDollarSign,
   Crown,
   Medal,
-  RotateCcw,
   ShieldCheck,
   Sparkles,
   TrendingUp,
 } from 'lucide-react'
-import { api, API_MODE } from '@/lib/api'
 import { useLeaderboard, useLedger, useMe, useProjects, useTasks, useUsers } from '@/lib/hooks'
 import { pendingRewards, tierFor, tierProgress, TIERS } from '@/lib/points'
 import { pointsLabel, relativeDate } from '@/lib/format'
-import { useSession } from '@/lib/session'
 import { PageHeader } from '@/components/layout'
-import { Avatar, Badge, Button, EmptyState, Progress, Spinner, Stat } from '@/components/ui'
+import { Avatar, Badge, EmptyState, Progress, Spinner, Stat } from '@/components/ui'
 import { Leaderboard, LedgerTable, TierBadge } from '@/components/points'
 import { cx } from '@/lib/cx'
 
 export function ProfilePage() {
-  const navigate = useNavigate()
-  const queryClient = useQueryClient()
-  const signOut = useSession((state) => state.signOut)
   const { data: me, isLoading } = useMe()
   const { data: ledger = [] } = useLedger(me?.id ?? 0)
   const { data: leaderboard = [] } = useLeaderboard()
@@ -65,7 +58,7 @@ export function ProfilePage() {
     <div className="stack">
       <PageHeader
         eyebrow="Profile"
-        title={<>{me.username}<span className="title-dot">.</span></>}
+        title={<>{`Builder ${me.username}`}<span className="title-dot">.</span></>}
         description={
           <>
             {me.role} · {tier.name}. Your points are earned, never given — every entry below is a task that shipped or a review that cleared.
@@ -86,7 +79,7 @@ export function ProfilePage() {
           <Avatar name={me.username} size="xl" />
           <div>
             <span className="eyebrow">Member since {new Date(me.createdAt).getFullYear()}</span>
-            <h2>{me.username}</h2>
+            <h2>Builder {me.username}</h2>
             <p>{me.role}</p>
           </div>
         </div>
@@ -210,24 +203,6 @@ export function ProfilePage() {
               <div><span>Next tier</span><strong>{progress.next?.name ?? '—'}</strong></div>
               <div><span>Points to go</span><strong>{progress.next ? progress.remaining : 0}</strong></div>
             </div>
-            {API_MODE === 'mock' ? (
-              <div className="demo-reset">
-                <p>Demo data lives in this browser only. Reset it to walk the whole story again.</p>
-                <Button
-                  variant="quiet"
-                  size="sm"
-                  onClick={() => {
-                    if (!window.confirm('Reset the demo? Tasks, points and sessions will be restored to the seed.')) return
-                    api.resetDemo?.()
-                    queryClient.clear()
-                    signOut()
-                    navigate('/')
-                  }}
-                >
-                  <RotateCcw size={13} /> Reset demo data
-                </Button>
-              </div>
-            ) : null}
           </section>
 
           <section className="panel panel--tight">

@@ -1,11 +1,13 @@
 package models
 
+import "time"
+
 type User struct {
-	Id       int64  `json:"id"`
-	Username string `json:"username"`
-	Role     Role   `json:"role"`
-	Points   int    `json:"points"`
-	Password string `json:"-"`
+	ID        int64     `json:"id"`
+	Username  string    `json:"username"`
+	Role      Role      `json:"role"`
+	Points    int       `json:"points"`
+	CreatedAt time.Time `json:"createdAt"`
 }
 
 type Role string
@@ -22,25 +24,36 @@ const (
 	UIUXDesigner      Role = "UIUX Designer"
 )
 
-type PLS string
+var Roles = []Role{
+	ProjectManager,
+	DatabaseEngineer,
+	FrontendEngineer,
+	BackendEngineer,
+	FullstackEngineer,
+	QualityAssuranceE,
+	SoftwareEngineer,
+	DataScientist,
+	UIUXDesigner,
+}
 
-const (
-	GoDeveloper         PLS = "Go Developer"
-	RustDeveloper       PLS = "Rust Developer"
-	PythonDeveloper     PLS = "Python Developer"
-	SwiftDeveloper      PLS = "Swift Developer"
-	JavaScriptDeveloper PLS = "JavaScript Developer"
-	TypeScriptDeveloper PLS = "TypeScript Developer"
-	CPPDeveloper        PLS = "C++ Developer"
-	CDeveloper          PLS = "C Developer"
-	RubyDeveloper       PLS = "Ruby Developer"
-	ZigDeveloper        PLS = "Zig Developer"
-	HtmlCssDeveloper    PLS = "Html/Css Developer"
-	JavaDeveloper       PLS = "JavaDeveloper"
-	KotlinDeveloper     PLS = "Kotlin Developer"
-	HaskelDeveloper     PLS = "Haskel Developer"
-	CSDeveloper         PLS = "C# Developer"
-	X86Developer        PLS = "x86_64 Assembly Developer"
-	ARMDeveloper        PLS = "ARM Assembly Developer"
-	RISCVDeveloper      PLS = "RISC-V Assembly Developer"
-)
+func IsRole(role Role) bool {
+	for _, candidate := range Roles {
+		if candidate == role {
+			return true
+		}
+	}
+	return false
+}
+
+type AuthResult struct {
+	User      User      `json:"user"`
+	Token     string    `json:"token"`
+	ExpiresAt time.Time `json:"expiresAt"`
+}
+
+type LeaderboardRow struct {
+	User           User `json:"user"`
+	Rank           int  `json:"rank"`
+	CompletedTasks int  `json:"completedTasks"`
+	Reviews        int  `json:"reviews"`
+}

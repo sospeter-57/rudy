@@ -86,6 +86,91 @@ export interface LeaderboardRow {
   reviews: number
 }
 
+export interface AuthSession {
+  user: User
+  token: string
+  expiresAt: string
+}
+
+export type ThemeMode = 'dark' | 'light' | 'system'
+
+export interface Preferences {
+  themeMode: ThemeMode
+  accent: string
+  blendA: string
+  blendB: string
+  updatedAt?: string
+}
+
+export interface PreferencesInput {
+  themeMode: ThemeMode
+  accent: string
+  blendA: string
+  blendB: string
+}
+
+export type StatsRange = '30d' | '90d' | 'all'
+
+export interface StatsTotals {
+  users: number
+  builders: number
+  projects: number
+  tasks: number
+  completedTasks: number
+  completionRate: number
+  pointsMinted: number
+  reviewsApproved: number
+  reviewsDecided: number
+  reviewApprovalPct: number
+  avgCycleHours: number
+}
+
+export interface ProjectStats {
+  projectId: number
+  name: string
+  totalTasks: number
+  proposed: number
+  pending: number
+  auditing: number
+  completed: number
+  openPoints: number
+  paidPoints: number
+  completionPct: number
+}
+
+export interface UserStats {
+  user: User
+  completedTasks: number
+  reviews: number
+}
+
+export interface TrendPoint {
+  period: string
+  proposals: number
+  completions: number
+  reviews: number
+  pointsMinted: number
+}
+
+export interface ReasonTotal {
+  reason: string
+  points: number
+  count: number
+}
+
+export interface Stats {
+  range: string
+  totals: StatsTotals
+  tasksByState: Record<string, number>
+  tasksByApprovalState: Record<string, number>
+  tasksByType: Record<string, number>
+  roleDistribution: Record<string, number>
+  projects: ProjectStats[]
+  users: UserStats[]
+  trends: TrendPoint[]
+  ledgerByReason: ReasonTotal[]
+}
+
 export interface TaskDraft {
   description: string
   taskType: TaskType

@@ -9,6 +9,8 @@ import { TasksPage } from '@/features/tasks/TasksPage'
 import { TaskDetailPage } from '@/features/tasks/TaskDetailPage'
 import { ReviewPage } from '@/features/review/ReviewPage'
 import { ProfilePage } from '@/features/profile/ProfilePage'
+import { StatsPage } from '@/features/stats/StatsPage'
+import { SettingsPage } from '@/features/settings/SettingsPage'
 import { NotFoundPage } from '@/features/NotFoundPage'
 
 function Protected({ children }: { children: React.ReactNode }) {
@@ -35,6 +37,8 @@ export function AppRoutes() {
         <Route path="/tasks/:id" element={<TaskDetailPage />} />
         <Route path="/review" element={<ReviewPage />} />
         <Route path="/profile" element={<ProfilePage />} />
+        <Route path="/stats" element={<StatsPage />} />
+        <Route path="/settings" element={<SettingsPage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Route>
     </Routes>

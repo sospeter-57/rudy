@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 240" role="img" aria-labelledby="rudy-title rudy-desc">
+  <title id="rudy-title">Rudy</title>
+  <desc id="rudy-desc">The Rudy wordmark: a geometric monoline RUDY in bone, with a gold R leg and a red accent dot, on a dark panel.</desc>
+
+  <defs>
+    <linearGradient id="rudy-word" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fffdf8" />
+      <stop offset="1" stop-color="#e8dfcf" />
+    </linearGradient>
+    <linearGradient id="rudy-gold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f0c75e" />
+      <stop offset="1" stop-color="#d4a72c" />
+    </linearGradient>
+    <radialGradient id="rudy-glow" cx="82%" cy="14%" r="72%">
+      <stop offset="0" stop-color="#e01e37" stop-opacity=".2" />
+      <stop offset="1" stop-color="#e01e37" stop-opacity="0" />
+    </radialGradient>
+    <radialGradient id="rudy-warm" cx="8%" cy="100%" r="60%">
+      <stop offset="0" stop-color="#d4a72c" stop-opacity=".12" />
+      <stop offset="1" stop-color="#d4a72c" stop-opacity="0" />
+    </radialGradient>
+  </defs>
+
+  <rect width="720" height="240" rx="18" fill="#0f0e12" />
+  <rect width="720" height="240" rx="18" fill="url(#rudy-glow)" />
+  <rect width="720" height="240" rx="18" fill="url(#rudy-warm)" />
+  <rect x="0.75" y="0.75" width="718.5" height="238.5" rx="17.25" fill="none" stroke="#2a2630" stroke-width="1.5" />
+
+  <g fill="none" stroke="url(#rudy-word)" stroke-width="22" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M102 166 V62 H150 C186 62 186 118 150 118 H102" />
+    <path d="M248 62 V128 C248 156 264 166 286 166 C308 166 324 156 324 128 V62" />
+    <path d="M380 62 V166 H410 C456 166 480 142 480 114 C480 86 456 62 410 62 H380" />
+    <path d="M534 62 L576 114 L618 62" />
+    <path d="M576 114 V166" />
+  </g>
+
+  <path d="M148 118 L190 166" fill="none" stroke="url(#rudy-gold)" stroke-width="22" stroke-linecap="round" />
+  <circle cx="654" cy="74" r="9" fill="#e01e37" />
+
+  <path d="M102 190 H618" stroke="#d4a72c" stroke-opacity=".35" stroke-width="1" />
+  <text x="102" y="216" font-family="'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" letter-spacing="4.5" fill="#b9b2a6">PROJECT COMMAND DECK</text>
+  <text x="618" y="216" text-anchor="end" font-family="'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" letter-spacing="3" fill="#7d766c">POINTS ON COMPLETION</text>
+</svg>
