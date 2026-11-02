@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
@@ -306,5 +307,102 @@ func TestStatsAndPreferences(t *testing.T) {
 		BlendB:    "#778899",
 	}); err == nil {
 		t.Fatal("expected an invalid color to be rejected")
+	}
+}
+
+func TestGoogleAuthCreatesLinksAndGuardsNewAccounts(t *testing.T) {
+	env := newTestEnv(t)
+	ctx := context.Background()
+	env.users.SetGoogleClientID("rudy-test-client")
+
+	env.users.SetGoogleValidator(func(_ context.Context, credential, clientID string) (GoogleIdentity, error) {
+		if clientID != "rudy-test-client" {
+			t.Fatalf("unexpected client id %q", clientID)
+		}
+		if credential != "verified" {
+			return GoogleIdentity{}, errors.New("invalid credential")
+		}
+		return GoogleIdentity{
+			Subject:       "google-grace",
+			Email:         "Grace@Example.com",
+			Name:          "Grace Hopper",
+			EmailVerified: true,
+		}, nil
+	})
+
+	if _, err := env.users.GoogleAuth(ctx, "verified", nil); err == nil {
+		t.Fatal("expected a new Google account to require a role")
+	}
+
+	role := models.FrontendEngineer
+	created, err := env.users.GoogleAuth(ctx, "verified", &role)
+	if err != nil {
+		t.Fatalf("google create: %v", err)
+	}
+	if created.User.Email != "grace@example.com" {
+		t.Fatalf("email = %q", created.User.Email)
+	}
+	if created.User.Username != "grace" {
+		t.Fatalf("username = %q", created.User.Username)
+	}
+	if created.Token == "" {
+		t.Fatal("expected a session token")
+	}
+	if _, err := env.users.Authenticate(ctx, created.Token); err != nil {
+		t.Fatalf("google session should authenticate: %v", err)
+	}
+
+	second, err := env.users.GoogleAuth(ctx, "verified", nil)
+	if err != nil {
+		t.Fatalf("google sign-in: %v", err)
+	}
+	if second.User.ID != created.User.ID {
+		t.Fatalf("expected the same account, got %d and %d", created.User.ID, second.User.ID)
+	}
+
+	if _, err := env.users.Login(ctx, created.User.Username, "password123"); err == nil {
+		t.Fatal("Google-only accounts must not accept password login")
+	}
+	if _, err := env.users.GoogleAuth(ctx, "forged", nil); err == nil {
+		t.Fatal("expected an invalid Google credential to be rejected")
+	}
+}
+
+func TestGoogleAuthLinksAnExistingEmailAccount(t *testing.T) {
+	env := newTestEnv(t)
+	ctx := context.Background()
+	env.users.SetGoogleClientID("rudy-test-client")
+
+	local := env.register(t, "ada", models.ProjectManager).User
+	if _, err := env.db.SQL().ExecContext(ctx, `UPDATE users SET email = ? WHERE id = ?`, "ada@example.com", local.ID); err != nil {
+		t.Fatalf("seed email: %v", err)
+	}
+
+	env.users.SetGoogleValidator(func(_ context.Context, _, _ string) (GoogleIdentity, error) {
+		return GoogleIdentity{
+			Subject:       "google-ada",
+			Email:         "ADA@example.com",
+			Name:          "Ada Lovelace",
+			EmailVerified: true,
+		}, nil
+	})
+
+	linked, err := env.users.GoogleAuth(ctx, "verified", nil)
+	if err != nil {
+		t.Fatalf("google link: %v", err)
+	}
+	if linked.User.ID != local.ID {
+		t.Fatalf("expected local account %d, got %d", local.ID, linked.User.ID)
+	}
+	if linked.User.Username != "ada" {
+		t.Fatalf("username = %q", linked.User.Username)
+	}
+
+	again, err := env.users.GoogleAuth(ctx, "verified", nil)
+	if err != nil {
+		t.Fatalf("second google sign-in: %v", err)
+	}
+	if again.User.ID != local.ID {
+		t.Fatalf("expected linked account on repeat sign-in")
 	}
 }

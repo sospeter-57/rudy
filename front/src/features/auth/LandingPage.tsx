@@ -2,9 +2,11 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowRight } from 'lucide-react'
 import { api } from '@/lib/api'
+import { config } from '@/lib/config'
 import { ROLES, type Role } from '@/lib/types'
 import { useSession } from '@/lib/session'
-import { Button, Field, Input, Select } from '@/components/ui'
+import { Button, Field, Input, PasswordInput, Select } from '@/components/ui'
+import { GoogleSignIn } from '@/components/GoogleSignIn'
 import { cx } from '@/lib/cx'
 
 type Mode = 'login' | 'register'
@@ -37,6 +39,22 @@ export function LandingPage() {
       navigate('/dashboard', { replace: true })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function googleSubmit(credential: string) {
+    setError(null)
+    setBusy(true)
+    try {
+      // A role is only needed when Google creates a brand-new account. Existing
+      // accounts are matched by Google subject or verified email.
+      const next = await api.googleLogin(credential, mode === 'register' ? role : undefined)
+      setSession(next.user, next.token)
+      navigate('/dashboard', { replace: true })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Google sign-in failed.')
     } finally {
       setBusy(false)
     }
@@ -143,9 +161,8 @@ export function LandingPage() {
             </Field>
 
             <Field label="Password" hint={mode === 'register' ? '8+ characters' : undefined} htmlFor="password">
-              <Input
+              <PasswordInput
                 id="password"
-                type="password"
                 autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
                 placeholder="••••••••"
                 value={password}
@@ -173,6 +190,20 @@ export function LandingPage() {
               {!busy ? <ArrowRight size={16} /> : null}
             </Button>
           </form>
+
+          {config.googleClientId ? (
+            <div className="auth__alt">
+              <div className="auth__divider">
+                <span>or continue with</span>
+              </div>
+              <GoogleSignIn mode={mode} disabled={busy} onCredential={googleSubmit} onError={setError} />
+              <p className="auth__google-note">
+                {mode === 'login'
+                  ? 'First time here? Create a profile, choose a role, then continue with Google.'
+                  : 'A new Google account uses the role selected above.'}
+              </p>
+            </div>
+          ) : null}
         </div>
       </section>
     </div>

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -134,5 +135,74 @@ func TestBearerSessionFlow(t *testing.T) {
 	}
 	if status, _ := api.do(t, http.MethodGet, "/me", token, nil); status != http.StatusUnauthorized {
 		t.Fatalf("revoked /me status = %d, want 401", status)
+	}
+}
+
+func TestGoogleAuthEndpoint(t *testing.T) {
+	db, err := transaction.Open(filepath.Join(t.TempDir(), "rudy.db"))
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if err := db.Migrate(context.Background()); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	clientID := "rudy-http-client"
+	users := services.NewUserService(db, time.Hour)
+	users.SetGoogleClientID(clientID)
+	users.SetGoogleValidator(func(_ context.Context, credential, id string) (services.GoogleIdentity, error) {
+		if id != clientID {
+			return services.GoogleIdentity{}, errors.New("unexpected client id")
+		}
+		if credential != "verified" {
+			return services.GoogleIdentity{}, errors.New("invalid credential")
+		}
+		return services.GoogleIdentity{
+			Subject:       "google-http",
+			Email:         "http@example.com",
+			Name:          "HTTP Tester",
+			EmailVerified: true,
+		}, nil
+	})
+
+	handler := NewRouter(Deps{
+		Users:       users,
+		Projects:    services.NewProjectService(db),
+		Tasks:       services.NewTaskService(db),
+		Stats:       services.NewStatsService(db),
+		Preferences: services.NewPreferencesService(db),
+	})
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	encoded, err := json.Marshal(map[string]any{
+		"credential": "verified",
+		"role":       "Frontend Engineer",
+	})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	request, err := http.NewRequest(http.MethodPost, server.URL+"/auth/google", bytes.NewReader(encoded))
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("do: %v", err)
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", response.StatusCode)
+	}
+	var payload map[string]any
+	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if payload["token"] == nil {
+		t.Fatalf("expected a token, got %v", payload)
 	}
 }

@@ -22,18 +22,19 @@ Rudy uses opaque session tokens.
 3. `POST /logout` revokes the current token.
 4. Tokens expire after `RUDY_SESSION_TTL_HOURS` (default 720 hours = 30 days).
 
-Public routes are `GET /health`, `POST /register` and `POST /login`. Everything
-else requires a bearer token.
+Public routes are `GET /health`, `POST /register`, `POST /login` and
+`POST /auth/google`. Everything else requires a bearer token.
 
 ### Auth response
 
-`POST /register` (201) and `POST /login` (200) return:
+`POST /register` (201), `POST /login` (200) and `POST /auth/google` (200) return:
 
 ```json
 {
   "user": {
     "id": 1,
     "username": "nova",
+    "email": "nova@example.com",
     "role": "Project Manager",
     "points": 0,
     "createdAt": "2026-11-02T08:15:43Z"
@@ -43,7 +44,8 @@ else requires a bearer token.
 }
 ```
 
-The plaintext token is returned only here. Store it client-side and never log it.
+`email` is omitted for accounts created with a username and password. The
+plaintext token is returned only here. Store it client-side and never log it.
 
 ## Error format
 
@@ -120,6 +122,29 @@ Public. Body:
 ```
 
 Returns `200` with the auth response, or `401` for bad credentials.
+
+### `POST /auth/google`
+
+Public. Body:
+
+```json
+{
+  "credential": "<Google Identity Services ID token>",
+  "role": "Frontend Engineer"
+}
+```
+
+The client obtains the ID token from Google Identity Services and posts it here.
+The API verifies its signature, issuer, audience and expiry against
+`RUDY_GOOGLE_CLIENT_ID`; the browser never gets to choose its own identity.
+
+- Existing Google accounts are matched by `sub`.
+- An account with the same verified email is linked to the Google identity.
+- A new account is created only when `role` is supplied and valid.
+- Google-only accounts cannot sign in with a password.
+
+Returns `200` with the auth response, `401` when the token is invalid, or `422`
+when a new account needs a role.
 
 ### `POST /logout`
 

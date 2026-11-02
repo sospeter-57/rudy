@@ -52,6 +52,26 @@ func (s *server) login(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
+func (s *server) googleAuth(w http.ResponseWriter, r *http.Request) {
+	if s.users == nil {
+		writeError(w, http.StatusNotImplemented, "user service not configured")
+		return
+	}
+
+	var req googleAuthRequest
+	if !s.readJSON(w, r, &req) {
+		return
+	}
+
+	result, err := s.users.GoogleAuth(r.Context(), req.Credential, req.Role)
+	if err != nil {
+		s.respondError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, result)
+}
+
 func (s *server) logout(w http.ResponseWriter, r *http.Request) {
 	if s.users == nil {
 		writeError(w, http.StatusNotImplemented, "user service not configured")

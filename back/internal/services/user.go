@@ -4,13 +4,17 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
 
 	"golang.org/x/crypto/bcrypt"
+	"google.golang.org/api/idtoken"
 
 	"rudy/internal/models"
 	"rudy/internal/transaction"
@@ -22,17 +26,48 @@ const (
 	minPasswordRunes = 8
 )
 
+// GoogleIdentity is the verified profile data Rudy needs from a Google ID token.
+type GoogleIdentity struct {
+	Subject       string
+	Email         string
+	Name          string
+	EmailVerified bool
+}
+
+// GoogleValidator verifies a Google ID token for a client. Tests replace it
+// with a stub so the auth flow can run without network access.
+type GoogleValidator func(ctx context.Context, credential, clientID string) (GoogleIdentity, error)
+
 type UserService struct {
-	db         *transaction.DB
-	sessionTTL time.Duration
-	bcryptCost int
+	db              *transaction.DB
+	sessionTTL      time.Duration
+	bcryptCost      int
+	googleClientID  string
+	googleValidator GoogleValidator
 }
 
 func NewUserService(db *transaction.DB, sessionTTL time.Duration) *UserService {
 	if sessionTTL <= 0 {
 		sessionTTL = 30 * 24 * time.Hour
 	}
-	return &UserService{db: db, sessionTTL: sessionTTL, bcryptCost: bcrypt.DefaultCost}
+	return &UserService{
+		db:              db,
+		sessionTTL:      sessionTTL,
+		bcryptCost:      bcrypt.DefaultCost,
+		googleValidator: validateGoogleCredential,
+	}
+}
+
+// SetGoogleClientID enables Google sign-in for the given OAuth client. An empty
+// value leaves the endpoint disabled instead of accepting unverified tokens.
+func (s *UserService) SetGoogleClientID(clientID string) {
+	s.googleClientID = strings.TrimSpace(clientID)
+}
+
+func (s *UserService) SetGoogleValidator(validator GoogleValidator) {
+	if validator != nil {
+		s.googleValidator = validator
+	}
 }
 
 func (s *UserService) Register(ctx context.Context, username, password string, role models.Role) (models.AuthResult, error) {
@@ -115,6 +150,117 @@ func (s *UserService) Login(ctx context.Context, username, password string) (mod
 	return models.AuthResult{User: user, Token: token, ExpiresAt: expiresAt}, nil
 }
 
+// GoogleAuth exchanges a Google ID token for a Rudy session. Existing accounts
+// are matched by Google subject first, then by verified email so a password
+// account can be linked without creating a duplicate. When no account exists a
+// role is required: the client chooses one during "Create profile".
+func (s *UserService) GoogleAuth(ctx context.Context, credential string, role *models.Role) (models.AuthResult, error) {
+	credential = strings.TrimSpace(credential)
+	if credential == "" {
+		return models.AuthResult{}, models.Validation("a Google credential is required")
+	}
+	if s.googleClientID == "" {
+		return models.AuthResult{}, models.Validation("Google sign-in is not configured")
+	}
+	if s.googleValidator == nil {
+		return models.AuthResult{}, models.NewError(models.KindInternal, "Google sign-in is unavailable")
+	}
+
+	identity, err := s.googleValidator(ctx, credential, s.googleClientID)
+	if err != nil {
+		return models.AuthResult{}, models.Unauthorized("Google sign-in could not be verified")
+	}
+	email := strings.ToLower(strings.TrimSpace(identity.Email))
+	if identity.Subject == "" || email == "" || !identity.EmailVerified {
+		return models.AuthResult{}, models.Unauthorized("Google account is missing a verified email")
+	}
+
+	now := time.Now().UTC()
+	var result models.AuthResult
+	err = s.db.WithTx(ctx, func(repo *transaction.Repo) error {
+		user, err := repo.UserByGoogleSub(ctx, identity.Subject)
+		if err == nil {
+			result, err = s.sessionForUser(ctx, repo, user, now)
+			return err
+		}
+		if !isNotFound(err) {
+			return err
+		}
+
+		user, err = repo.UserByEmail(ctx, email)
+		if err == nil {
+			if err := repo.LinkGoogleAccount(ctx, user.ID, email, identity.Subject); err != nil {
+				return err
+			}
+			user.Email = email
+			result, err = s.sessionForUser(ctx, repo, user, now)
+			return err
+		}
+		if !isNotFound(err) {
+			return err
+		}
+
+		if role == nil {
+			return models.Validation("no Rudy account uses this Google email; create a profile and choose a role first")
+		}
+		if !models.IsRole(*role) {
+			return models.Validation("role is not a known role")
+		}
+
+		created, err := s.createGoogleUser(ctx, repo, identity, email, *role, now)
+		if err != nil {
+			return err
+		}
+		result, err = s.sessionForUser(ctx, repo, created, now)
+		return err
+	})
+	if err != nil {
+		return models.AuthResult{}, err
+	}
+	return result, nil
+}
+
+func (s *UserService) createGoogleUser(ctx context.Context, repo *transaction.Repo, identity GoogleIdentity, email string, role models.Role, now time.Time) (models.User, error) {
+	base := googleUsername(identity.Name, email)
+
+	for attempt := 0; attempt < 25; attempt++ {
+		username := base
+		if attempt > 0 {
+			username = usernameWithSuffix(base, attempt+1)
+		}
+
+		user, err := repo.CreateGoogleUser(ctx, username, email, identity.Subject, unusablePasswordHash(), role, now)
+		if err == nil {
+			return user, nil
+		}
+		if !isUniqueViolation(err) {
+			return models.User{}, err
+		}
+
+		// A concurrent request may have linked this identity already. Reuse it
+		// instead of handing the caller an avoidable error.
+		if existing, lookupErr := repo.UserByGoogleSub(ctx, identity.Subject); lookupErr == nil {
+			return existing, nil
+		}
+		if existing, lookupErr := repo.UserByEmail(ctx, email); lookupErr == nil {
+			return existing, nil
+		}
+	}
+
+	return models.User{}, models.Conflict("could not allocate a username for this Google account")
+}
+
+func (s *UserService) sessionForUser(ctx context.Context, repo *transaction.Repo, user models.User, now time.Time) (models.AuthResult, error) {
+	if err := repo.DeleteExpiredSessions(ctx, now); err != nil {
+		return models.AuthResult{}, err
+	}
+	token, expiresAt, err := s.createSession(ctx, repo, user.ID, now)
+	if err != nil {
+		return models.AuthResult{}, err
+	}
+	return models.AuthResult{User: user, Token: token, ExpiresAt: expiresAt}, nil
+}
+
 func (s *UserService) Logout(ctx context.Context, token string) error {
 	if token == "" {
 		return nil
@@ -147,7 +293,7 @@ func (s *UserService) Users(ctx context.Context) ([]models.User, error) {
 func (s *UserService) Leaderboard(ctx context.Context) ([]models.LeaderboardRow, error) {
 	rows, err := s.db.SQL().QueryContext(ctx, `
 		SELECT
-			u.id, u.username, u.role, u.points, u.created_at,
+			u.id, u.username, u.email, u.role, u.points, u.created_at,
 			(SELECT COUNT(*) FROM tasks t WHERE t.assignee_id = u.id AND t.task_state = 'completed') AS completed_tasks,
 			(SELECT COUNT(*) FROM task_reviewers r WHERE r.user_id = u.id AND r.decision = 'approved') AS reviews
 		FROM users u
@@ -161,13 +307,17 @@ func (s *UserService) Leaderboard(ctx context.Context) ([]models.LeaderboardRow,
 	for rows.Next() {
 		var (
 			row       models.LeaderboardRow
+			email     sql.NullString
 			createdAt string
 		)
 		if err := rows.Scan(
-			&row.User.ID, &row.User.Username, &row.User.Role, &row.User.Points, &createdAt,
+			&row.User.ID, &row.User.Username, &email, &row.User.Role, &row.User.Points, &createdAt,
 			&row.CompletedTasks, &row.Reviews,
 		); err != nil {
 			return nil, err
+		}
+		if email.Valid {
+			row.User.Email = email.String
 		}
 		row.User.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
 		row.Rank = len(result) + 1
@@ -211,4 +361,86 @@ func isUniqueViolation(err error) bool {
 	}
 	message := strings.ToLower(err.Error())
 	return strings.Contains(message, "unique constraint") || strings.Contains(message, "constraint failed")
+}
+
+func isNotFound(err error) bool {
+	var appErr *models.AppError
+	return errors.As(err, &appErr) && appErr.Kind == models.KindNotFound
+}
+
+// validateGoogleCredential is the production Google ID-token verifier. It
+// checks the signature, issuer, audience and expiry through Google's library.
+func validateGoogleCredential(ctx context.Context, credential, clientID string) (GoogleIdentity, error) {
+	payload, err := idtoken.Validate(ctx, credential, clientID)
+	if err != nil {
+		return GoogleIdentity{}, err
+	}
+
+	email, _ := payload.Claims["email"].(string)
+	name, _ := payload.Claims["name"].(string)
+	verified, _ := payload.Claims["email_verified"].(bool)
+
+	return GoogleIdentity{
+		Subject:       payload.Subject,
+		Email:         email,
+		Name:          name,
+		EmailVerified: verified,
+	}, nil
+}
+
+// unusablePasswordHash is deliberately not a bcrypt hash, so password login can
+// never succeed for a Google-only account.
+func unusablePasswordHash() string {
+	token, err := randomToken()
+	if err != nil {
+		return "google-sign-in-only"
+	}
+	return "google-sign-in-only:" + token
+}
+
+func googleUsername(name, email string) string {
+	base := strings.ToLower(strings.TrimSpace(email))
+	if idx := strings.Index(base, "@"); idx > 0 {
+		base = base[:idx]
+	}
+	base = sanitizeUsername(base)
+	if utf8.RuneCountInString(base) < minUsernameRunes {
+		base = sanitizeUsername(strings.ToLower(name))
+	}
+	if utf8.RuneCountInString(base) < minUsernameRunes {
+		base = "builder"
+	}
+	return truncateRunes(base, maxUsernameRunes)
+}
+
+func sanitizeUsername(value string) string {
+	var builder strings.Builder
+	for _, r := range strings.ToLower(value) {
+		switch {
+		case r >= 'a' && r <= 'z':
+			builder.WriteRune(r)
+		case r >= '0' && r <= '9':
+			builder.WriteRune(r)
+		case r == '_' || r == '-' || r == '.':
+			builder.WriteRune(r)
+		}
+	}
+	return strings.Trim(builder.String(), "._-")
+}
+
+func usernameWithSuffix(base string, n int) string {
+	suffix := "-" + strconv.Itoa(n)
+	limit := maxUsernameRunes - utf8.RuneCountInString(suffix)
+	if limit < minUsernameRunes {
+		limit = minUsernameRunes
+	}
+	return truncateRunes(base, limit) + suffix
+}
+
+func truncateRunes(value string, max int) string {
+	runes := []rune(value)
+	if len(runes) <= max {
+		return value
+	}
+	return string(runes[:max])
 }

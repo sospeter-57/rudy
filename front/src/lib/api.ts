@@ -8,6 +8,7 @@ import {
   type Project,
   type ProjectDraft,
   type RegisterDraft,
+  type Role,
   type Stats,
   type StatsRange,
   type Task,
@@ -36,6 +37,7 @@ export interface CompletionResult {
 export interface ApiClient {
   login(username: string, password: string): Promise<AuthSession>
   register(draft: RegisterDraft): Promise<AuthSession>
+  googleLogin(credential: string, role?: Role): Promise<AuthSession>
   logout(): Promise<void>
   me(): Promise<User>
   listUsers(): Promise<User[]>
@@ -116,6 +118,12 @@ export const api: ApiClient = {
     request<AuthSession>('/register', {
       method: 'POST',
       body: JSON.stringify(draft),
+    }),
+
+  googleLogin: (credential, role) =>
+    request<AuthSession>('/auth/google', {
+      method: 'POST',
+      body: JSON.stringify({ credential, role }),
     }),
 
   logout: () => request<void>('/logout', { method: 'POST' }),

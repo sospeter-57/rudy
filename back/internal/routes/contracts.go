@@ -7,6 +7,11 @@ type credentialsRequest struct {
 	Password string `json:"password"`
 }
 
+type googleAuthRequest struct {
+	Credential string       `json:"credential"`
+	Role       *models.Role `json:"role"`
+}
+
 type registerRequest struct {
 	Username string      `json:"username"`
 	Password string      `json:"password"`

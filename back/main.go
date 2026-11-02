@@ -73,8 +73,11 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 
+	users := services.NewUserService(db, sessionTTL())
+	users.SetGoogleClientID(os.Getenv("RUDY_GOOGLE_CLIENT_ID"))
+
 	handler := routes.NewRouter(routes.Deps{
-		Users:       services.NewUserService(db, sessionTTL()),
+		Users:       users,
 		Projects:    services.NewProjectService(db),
 		Tasks:       services.NewTaskService(db),
 		Stats:       services.NewStatsService(db),

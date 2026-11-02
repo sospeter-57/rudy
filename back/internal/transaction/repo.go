@@ -61,11 +61,15 @@ type scanner interface {
 func scanUser(row scanner) (models.User, error) {
 	var (
 		user      models.User
+		email     sql.NullString
 		createdAt string
 	)
-	err := row.Scan(&user.ID, &user.Username, &user.Role, &user.Points, &createdAt)
+	err := row.Scan(&user.ID, &user.Username, &email, &user.Role, &user.Points, &createdAt)
 	if err != nil {
 		return models.User{}, err
+	}
+	if email.Valid {
+		user.Email = email.String
 	}
 	user.CreatedAt = parseTime(createdAt)
 	return user, nil
@@ -93,20 +97,49 @@ func (r *Repo) CreateUser(ctx context.Context, username, passwordHash string, ro
 	}, nil
 }
 
+// CreateGoogleUser inserts an account that authenticates through Google only.
+// passwordHash is an unusable placeholder, so password login can never match.
+func (r *Repo) CreateGoogleUser(ctx context.Context, username, email, googleSub, passwordHash string, role models.Role, createdAt time.Time) (models.User, error) {
+	result, err := r.q.ExecContext(ctx, `
+		INSERT INTO users (username, email, google_sub, password_hash, role, points, created_at)
+		VALUES (?, ?, ?, ?, ?, 0, ?)`,
+		username, email, googleSub, passwordHash, role, formatTime(createdAt),
+	)
+	if err != nil {
+		return models.User{}, err
+	}
+	id, err := result.LastInsertId()
+	if err != nil {
+		return models.User{}, err
+	}
+	return models.User{
+		ID:        id,
+		Username:  username,
+		Email:     email,
+		Role:      role,
+		Points:    0,
+		CreatedAt: createdAt.UTC(),
+	}, nil
+}
+
 func (r *Repo) UserByUsername(ctx context.Context, username string) (models.User, string, error) {
 	row := r.q.QueryRowContext(ctx, `
-		SELECT id, username, role, points, created_at, password_hash
+		SELECT id, username, email, role, points, created_at, password_hash
 		FROM users WHERE username = ? COLLATE NOCASE`, username)
 	var (
 		user         models.User
+		email        sql.NullString
 		createdAt    string
 		passwordHash string
 	)
-	if err := row.Scan(&user.ID, &user.Username, &user.Role, &user.Points, &createdAt, &passwordHash); err != nil {
+	if err := row.Scan(&user.ID, &user.Username, &email, &user.Role, &user.Points, &createdAt, &passwordHash); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return models.User{}, "", models.NotFound("user not found")
 		}
 		return models.User{}, "", err
+	}
+	if email.Valid {
+		user.Email = email.String
 	}
 	user.CreatedAt = parseTime(createdAt)
 	return user, passwordHash, nil
@@ -114,7 +147,7 @@ func (r *Repo) UserByUsername(ctx context.Context, username string) (models.User
 
 func (r *Repo) UserByID(ctx context.Context, id int64) (models.User, error) {
 	row := r.q.QueryRowContext(ctx, `
-		SELECT id, username, role, points, created_at FROM users WHERE id = ?`, id)
+		SELECT id, username, email, role, points, created_at FROM users WHERE id = ?`, id)
 	user, err := scanUser(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return models.User{}, models.NotFound("user not found")
@@ -122,9 +155,41 @@ func (r *Repo) UserByID(ctx context.Context, id int64) (models.User, error) {
 	return user, err
 }
 
+func (r *Repo) UserByEmail(ctx context.Context, email string) (models.User, error) {
+	row := r.q.QueryRowContext(ctx, `
+		SELECT id, username, email, role, points, created_at
+		FROM users WHERE email = ? COLLATE NOCASE`, email)
+	user, err := scanUser(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return models.User{}, models.NotFound("user not found")
+	}
+	return user, err
+}
+
+func (r *Repo) UserByGoogleSub(ctx context.Context, sub string) (models.User, error) {
+	row := r.q.QueryRowContext(ctx, `
+		SELECT id, username, email, role, points, created_at
+		FROM users WHERE google_sub = ?`, sub)
+	user, err := scanUser(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return models.User{}, models.NotFound("user not found")
+	}
+	return user, err
+}
+
+// LinkGoogleAccount attaches a verified Google identity to an existing account.
+func (r *Repo) LinkGoogleAccount(ctx context.Context, userID int64, email, sub string) error {
+	result, err := r.q.ExecContext(ctx, `
+		UPDATE users SET email = ?, google_sub = ? WHERE id = ?`, email, sub, userID)
+	if err != nil {
+		return err
+	}
+	return r.requireAffected(result, "user not found")
+}
+
 func (r *Repo) Users(ctx context.Context) ([]models.User, error) {
 	rows, err := r.q.QueryContext(ctx, `
-		SELECT id, username, role, points, created_at
+		SELECT id, username, email, role, points, created_at
 		FROM users ORDER BY points DESC, username ASC`)
 	if err != nil {
 		return nil, err
@@ -153,7 +218,7 @@ func (r *Repo) CreateSession(ctx context.Context, id string, userID int64, token
 
 func (r *Repo) SessionUser(ctx context.Context, tokenHash string, now time.Time) (models.User, string, error) {
 	row := r.q.QueryRowContext(ctx, `
-		SELECT u.id, u.username, u.role, u.points, u.created_at, s.id
+		SELECT u.id, u.username, u.email, u.role, u.points, u.created_at, s.id
 		FROM sessions s
 		JOIN users u ON u.id = s.user_id
 		WHERE s.token_hash = ? AND s.revoked_at IS NULL AND s.expires_at > ?`,
@@ -162,15 +227,19 @@ func (r *Repo) SessionUser(ctx context.Context, tokenHash string, now time.Time)
 
 	var (
 		user      models.User
+		email     sql.NullString
 		createdAt string
 		sessionID string
 	)
-	err := row.Scan(&user.ID, &user.Username, &user.Role, &user.Points, &createdAt, &sessionID)
+	err := row.Scan(&user.ID, &user.Username, &email, &user.Role, &user.Points, &createdAt, &sessionID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return models.User{}, "", models.Unauthorized("session expired or invalid")
 	}
 	if err != nil {
 		return models.User{}, "", err
+	}
+	if email.Valid {
+		user.Email = email.String
 	}
 	user.CreatedAt = parseTime(createdAt)
 	return user, sessionID, nil

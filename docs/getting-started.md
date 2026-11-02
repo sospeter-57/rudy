@@ -42,6 +42,7 @@ go run .
 | `RUDY_ADDR` | unset | Full `host:port` override, or a bare port; when set it wins over `RUDY_HOST`/`RUDY_PORT`/`PORT` |
 | `RUDY_DB` | `rudy.db` | SQLite file path. Use a temp path for throwaway runs. |
 | `RUDY_SESSION_TTL_HOURS` | `720` (30 days) | Session lifetime in hours |
+| `RUDY_GOOGLE_CLIENT_ID` | unset | OAuth 2.0 Web client ID for Google sign-in. Unset disables the endpoint. |
 | `RUDY_ENV_FILE` | `.env` | Path to the env file to load, relative to the working directory |
 
 Example:
@@ -66,6 +67,27 @@ container filesystem.
 The database uses WAL mode, foreign keys, a 5 second busy timeout, and a single
 pooled connection (SQLite allows one writer). Delete the file to start over.
 
+### Google sign-in (optional)
+
+1. In the [Google Cloud Console](https://console.cloud.google.com/apis/credentials)
+   create an **OAuth 2.0 Client ID** of type **Web application**.
+2. Add your frontend origin under **Authorized JavaScript origins**:
+   `http://localhost:5173` for local development, plus the production origin.
+3. Put the same client ID in both env files:
+
+   ```bash
+   # back/.env
+   RUDY_GOOGLE_CLIENT_ID=1234567890-abc.apps.googleusercontent.com
+
+   # front/.env
+   VITE_GOOGLE_CLIENT_ID=1234567890-abc.apps.googleusercontent.com
+   ```
+
+No client secret is needed: the browser receives a short-lived Google ID token
+and the Go API verifies it with Google's public keys. The Google button is hidden
+when `VITE_GOOGLE_CLIENT_ID` is empty, and the endpoint returns `422` when the
+backend is not configured.
+
 ### Add the first account
 
 Open the client, choose **Create profile**, and pick **Project Manager** if you want
@@ -88,6 +110,7 @@ there are no CORS settings to configure in development.
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `VITE_API_BASE` | `/api` | Base path for API calls. In development this hits the Vite proxy. |
+| `VITE_GOOGLE_CLIENT_ID` | unset | Same OAuth client ID as `RUDY_GOOGLE_CLIENT_ID`. Empty hides the Google button. |
 
 For a production build served from another origin, set
 `VITE_API_BASE=https://api.example.com` and allow the frontend origin on the Go

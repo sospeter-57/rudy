@@ -15,6 +15,7 @@ export type Role = (typeof ROLES)[number]
 export interface User {
   id: number
   username: string
+  email?: string
   role: Role
   points: number
   createdAt: string

@@ -48,6 +48,7 @@ func NewRouter(deps Deps) http.Handler {
 	mux.HandleFunc("GET /health", s.health)
 	mux.HandleFunc("POST /register", s.register)
 	mux.HandleFunc("POST /login", s.login)
+	mux.HandleFunc("POST /auth/google", s.googleAuth)
 
 	// Everything else requires an opaque bearer token.
 	protected := func(handler http.HandlerFunc) http.Handler {

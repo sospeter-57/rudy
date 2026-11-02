@@ -1,6 +1,6 @@
 import { createPortal } from 'react-dom'
-import { useEffect, useId, type ReactNode } from 'react'
-import { X } from 'lucide-react'
+import { useEffect, useId, useState, type ReactNode } from 'react'
+import { Eye, EyeOff, X } from 'lucide-react'
 import { cx } from '@/lib/cx'
 import { initials } from '@/lib/format'
 import { useToasts } from '@/lib/toast'
@@ -52,6 +52,30 @@ export function Field({
 
 export function Input({ className, ...props }: React.InputHTMLAttributes<HTMLInputElement>) {
   return <input className={cx('input', className)} {...props} />
+}
+
+/**
+ * Password input with a show/hide control. The toggle is a `type="button"` so
+ * it never submits a form, and it is keyboard reachable with a clear label.
+ */
+export function PasswordInput({ className, ...props }: Omit<React.InputHTMLAttributes<HTMLInputElement>, 'type'>) {
+  const [visible, setVisible] = useState(false)
+
+  return (
+    <span className={cx('input-affix', className)}>
+      <input className="input" {...props} type={visible ? 'text' : 'password'} />
+      <button
+        type="button"
+        className="input-affix__toggle"
+        onClick={() => setVisible((value) => !value)}
+        aria-label={visible ? 'Hide password' : 'Show password'}
+        aria-pressed={visible}
+        title={visible ? 'Hide password' : 'Show password'}
+      >
+        {visible ? <EyeOff size={16} /> : <Eye size={16} />}
+      </button>
+    </span>
+  )
 }
 
 export function Textarea({ className, ...props }: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {

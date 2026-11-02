@@ -25,10 +25,12 @@ npm run preview    # serve the build
 
 ```bash
 VITE_API_BASE=/api
+VITE_GOOGLE_CLIENT_ID=1234567890-abc.apps.googleusercontent.com   # optional
 ```
 
-`VITE_API_BASE` is the only required variable. All other tunables have safe
-defaults in `src/lib/config.ts`.
+`VITE_API_BASE` is the only required variable. `VITE_GOOGLE_CLIENT_ID` enables
+the Google sign-in button; it must match `RUDY_GOOGLE_CLIENT_ID` in `back/.env`.
+All other tunables have safe defaults in `src/lib/config.ts`.
 
 ## Routes
 

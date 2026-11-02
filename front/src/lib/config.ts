@@ -54,6 +54,9 @@ export const config = {
   /** Abort an HTTP request after this many milliseconds. */
   requestTimeoutMs: Math.max(1000, int('VITE_REQUEST_TIMEOUT_MS', 15_000)),
 
+  /** OAuth 2.0 client ID for Google sign-in. Empty hides the Google button. */
+  googleClientId: str('VITE_GOOGLE_CLIENT_ID', ''),
+
   /** Show the one-click demo accounts on the landing page. */
   demoLogin: bool('VITE_ENABLE_DEMO_LOGIN', true),
   /** Password shared by the seeded demo accounts. */
