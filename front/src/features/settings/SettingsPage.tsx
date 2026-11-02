@@ -192,7 +192,7 @@ export function SettingsPage() {
             </div>
             <div className="theme-preview__body">
               <span className="eyebrow">Command deck</span>
-              <h3>Work that pays in points.</h3>
+              <h3>Build Responsibly Purposefully</h3>
               <p>
                 Propose the work, clear approval, ship it and collect. This preview uses the same
                 tokens as every screen.
