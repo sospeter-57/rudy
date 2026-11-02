@@ -67,7 +67,7 @@ export interface Task {
   completedAt?: string
 }
 
-export type LedgerReason = 'task_completed' | 'review_bonus' | 'adjustment'
+export type LedgerReason = 'task_completed' | 'review_bonus' | 'adjustment' | 'lead_starting_balance'
 
 export interface LedgerEntry {
   id: number

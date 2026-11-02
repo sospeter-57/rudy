@@ -169,7 +169,13 @@ export function ProjectDetailPage() {
         ) : chats.length === 0 ? (
           <EmptyState
             title="No project rooms yet"
-            body={isLead ? 'Open a room for a slice of the project and pick who joins.' : 'The lead has not opened a project room yet.'}
+            body={
+              isLead
+                ? 'Open a room for a slice of the project and pick who joins.'
+                : isMember
+                  ? 'The lead has not added you to a project room yet.'
+                  : 'The lead has not opened a project room yet.'
+            }
           />
         ) : (
           <div className="chat-list">

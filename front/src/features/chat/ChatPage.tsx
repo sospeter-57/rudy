@@ -18,7 +18,7 @@ import {
   X,
 } from 'lucide-react'
 import { api } from '@/lib/api'
-import { useChat, useChatMessages, useChatRequests, useChats, useDiscoverChats, useMe, useUsers } from '@/lib/hooks'
+import { useChat, useChatMessages, useChatRequests, useChats, useDiscoverChats, useMe, useProjectMembers, useUsers } from '@/lib/hooks'
 import { useSession } from '@/lib/session'
 import { relativeDate } from '@/lib/format'
 import { toast } from '@/lib/toast'
@@ -237,10 +237,17 @@ function Composer({ roomId, onSent }: { roomId: number; onSent: () => void }) {
 
 function Conversation({ room }: { room: ChatRoom }) {
   const current = useSession((state) => state.user)
+  const me = useMe().data ?? current
   const { data: messages = [], isLoading } = useChatMessages(room.id)
   const scroller = useRef<HTMLDivElement>(null)
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const [membersOpen, setMembersOpen] = useState(false)
+
+  const isManager =
+    room.kind === 'project'
+      ? me?.id === room.createdBy
+      : (room.members ?? []).some((member) => member.userId === me?.id && member.roomRole === 'owner')
 
   const lastID = messages.at(-1)?.id
 
@@ -296,12 +303,20 @@ function Conversation({ room }: { room: ChatRoom }) {
           </div>
         </div>
         <div className="chat-room__actions">
+          {isManager && room.kind !== 'dm' ? (
+            <Button size="sm" variant="outline" onClick={() => setMembersOpen(true)}>
+              <Users size={14} /> Members
+            </Button>
+          ) : null}
           {room.kind !== 'dm' ? (
             <Button size="sm" variant="outline" onClick={() => void leave()}>
               <DoorOpen size={14} /> Leave
             </Button>
           ) : null}
         </div>
+        {membersOpen ? (
+          <ManageRoomMembersDialog room={room} onClose={() => setMembersOpen(false)} />
+        ) : null}
       </header>
 
       <div ref={scroller} className="chat-room__messages">
@@ -578,6 +593,122 @@ function RoomList({ rooms, selectedID }: { rooms: ChatRoom[]; selectedID: number
         </Link>
       ))}
     </div>
+  )
+}
+
+function ManageRoomMembersDialog({ room, onClose }: { room: ChatRoom; onClose: () => void }) {
+  const queryClient = useQueryClient()
+  const me = useMe().data
+  const { data: users = [] } = useUsers()
+  const { data: projectMembers = [] } = useProjectMembers(room.projectId ?? 0)
+  const [selected, setSelected] = useState<number[]>([])
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const memberIDs = new Set((room.members ?? []).map((member) => member.userId))
+
+  const candidates = useMemo(() => {
+    if (room.kind === 'project') {
+      return projectMembers
+        .filter((member) => !memberIDs.has(member.userId))
+        .map((member) => ({ id: member.userId, username: member.username, role: member.role }))
+    }
+    return users
+      .filter((user) => user.id !== me?.id && !memberIDs.has(user.id))
+      .map((user) => ({ id: user.id, username: user.username, role: user.role }))
+  }, [room.kind, projectMembers, users, memberIDs, me?.id])
+
+  function toggle(id: number) {
+    setSelected((current) => (current.includes(id) ? current.filter((value) => value !== id) : [...current, id]))
+  }
+
+  async function addSelected() {
+    if (selected.length === 0) return
+    setBusy(true)
+    setError(null)
+    try {
+      for (const userId of selected) {
+        await api.addChatMember(room.id, userId)
+      }
+      void queryClient.invalidateQueries({ queryKey: ['chat', room.id] })
+      void queryClient.invalidateQueries({ queryKey: ['chats'] })
+      setSelected([])
+      toast('Members updated', undefined, 'gold')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not add members.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function remove(userId: number) {
+    try {
+      await api.removeChatMember(room.id, userId)
+      void queryClient.invalidateQueries({ queryKey: ['chat', room.id] })
+      void queryClient.invalidateQueries({ queryKey: ['chats'] })
+    } catch (err) {
+      toast('Could not remove member', err instanceof Error ? err.message : undefined, 'red')
+    }
+  }
+
+  return (
+    <Dialog open onClose={onClose} title="Manage room members" eyebrow="Curated access" wide>
+      <div className="chat-member-picker">
+        <span className="field__label">Current members</span>
+        {(room.members ?? []).length === 0 ? (
+          <p className="meta-quiet">No members yet.</p>
+        ) : (
+          (room.members ?? []).map((member) => (
+            <div key={member.userId} className="chat-picker__row chat-picker__row--static">
+              <span className="chat-picker__who">
+                <strong>{member.username}</strong>
+                <small>{member.role} · {member.roomRole}</small>
+              </span>
+              {member.userId !== me?.id && member.roomRole !== 'owner' ? (
+                <Button size="sm" variant="quiet" onClick={() => void remove(member.userId)}>
+                  <X size={13} /> Remove
+                </Button>
+              ) : null}
+            </div>
+          ))
+        )}
+      </div>
+
+      <div className="chat-member-picker" style={{ marginTop: '1rem' }}>
+        <span className="field__label">Add members</span>
+        {candidates.length === 0 ? (
+          <p className="meta-quiet">
+            {room.kind === 'project'
+              ? 'Add people to the project first.'
+              : 'Everyone is already in this room.'}
+          </p>
+        ) : (
+          candidates.map((candidate) => (
+            <label key={candidate.id} className="chat-member-picker__row">
+              <input
+                type="checkbox"
+                checked={selected.includes(candidate.id)}
+                onChange={() => toggle(candidate.id)}
+              />
+              <span>
+                <strong>{candidate.username}</strong>
+                <small>{candidate.role}</small>
+              </span>
+              {selected.includes(candidate.id) ? <Check size={14} /> : null}
+            </label>
+          ))
+        )}
+      </div>
+
+      {error ? <p className="field__error">{error}</p> : null}
+
+      <div className="settings-actions" style={{ marginTop: '1rem' }}>
+        <Button onClick={() => void addSelected()} disabled={busy || selected.length === 0}>
+          {busy ? <Spinner label="Adding" /> : <UserPlus size={15} />} Add selected
+        </Button>
+        <Button variant="ghost" onClick={onClose}>Done</Button>
+      </div>
+    </Dialog>
   )
 }
 

@@ -5,9 +5,10 @@ import "time"
 type LedgerReason string
 
 const (
-	ReasonTaskCompleted LedgerReason = "task_completed"
-	ReasonReviewBonus   LedgerReason = "review_bonus"
-	ReasonAdjustment    LedgerReason = "adjustment"
+	ReasonTaskCompleted     LedgerReason = "task_completed"
+	ReasonReviewBonus       LedgerReason = "review_bonus"
+	ReasonAdjustment        LedgerReason = "adjustment"
+	ReasonLeadStartingBalance LedgerReason = "lead_starting_balance"
 )
 
 type LedgerEntry struct {

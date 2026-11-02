@@ -101,6 +101,26 @@ func (s *UserService) Register(ctx context.Context, username, password string, r
 		}
 		user = created
 
+		if role == models.Lead {
+			entry := models.LedgerEntry{
+				UserID:    user.ID,
+				Reason:    models.ReasonLeadStartingBalance,
+				Points:    100,
+				Note:      "Starting balance for a Lead",
+				CreatedAt: now,
+			}
+			if _, err := repo.InsertLedgerEntry(ctx, entry); err != nil {
+				return err
+			}
+			if err := repo.RecomputePoints(ctx, []int64{user.ID}); err != nil {
+				return err
+			}
+			refreshed, err := repo.UserByID(ctx, user.ID)
+			if err == nil {
+				user = refreshed
+			}
+		}
+
 		if err := repo.DeleteExpiredSessions(ctx, now); err != nil {
 			return err
 		}
@@ -231,6 +251,24 @@ func (s *UserService) createGoogleUser(ctx context.Context, repo *transaction.Re
 
 		user, err := repo.CreateGoogleUser(ctx, username, email, identity.Subject, unusablePasswordHash(), role, now)
 		if err == nil {
+			if role == models.Lead {
+				entry := models.LedgerEntry{
+					UserID:    user.ID,
+					Reason:    models.ReasonLeadStartingBalance,
+					Points:    100,
+					Note:      "Starting balance for a Lead",
+					CreatedAt: now,
+				}
+				if _, err := repo.InsertLedgerEntry(ctx, entry); err != nil {
+					return models.User{}, err
+				}
+				if err := repo.RecomputePoints(ctx, []int64{user.ID}); err != nil {
+					return models.User{}, err
+				}
+				if refreshed, err := repo.UserByID(ctx, user.ID); err == nil {
+					user = refreshed
+				}
+			}
 			return user, nil
 		}
 		if !isUniqueViolation(err) {

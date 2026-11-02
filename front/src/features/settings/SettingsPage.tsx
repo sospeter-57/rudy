@@ -27,14 +27,20 @@ export function SettingsPage() {
   const queryClient = useQueryClient()
   const { data, isLoading } = usePreferences()
   const [draft, setDraft] = useState<Preferences>(DEFAULT_PREFERENCES)
+  const [hydrated, setHydrated] = useState(false)
 
   useEffect(() => {
-    if (data) setDraft(data)
+    if (data) {
+      setDraft(data)
+      setHydrated(true)
+    }
   }, [data])
 
+  // Preview the draft without clobbering the saved theme on first mount: the
+  // shell's ThemeSync owns the persisted palette until the user changes it.
   useEffect(() => {
-    applyTheme(draft)
-  }, [draft])
+    if (hydrated) applyTheme(draft)
+  }, [draft, hydrated])
 
   const mutation = useMutation({
     mutationFn: () =>
@@ -52,7 +58,7 @@ export function SettingsPage() {
     onError: (err) => toast('Could not save', err instanceof Error ? err.message : 'Try again.', 'red'),
   })
 
-  if (isLoading) {
+  if (isLoading || !hydrated) {
     return <div className="loading-pane"><Spinner label="Loading settings" /><span>Reading your preferences…</span></div>
   }
 
@@ -62,7 +68,6 @@ export function SettingsPage() {
         eyebrow="Settings"
         title={<>Make it <em>yours</em>.</>}
         description="Appearance is stored on your account, so your palette and theme follow you between devices."
-        meta={<span className="meta-quiet">Preferences are saved by the Go API.</span>}
       />
 
       <div className="settings-grid">

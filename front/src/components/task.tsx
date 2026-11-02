@@ -1,10 +1,11 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ArrowUpRight, Check, CircleDashed, GitPullRequest, MessageSquareWarning, ShieldCheck } from 'lucide-react'
 import { cx } from '@/lib/cx'
 import { pointsLabel } from '@/lib/format'
 import { APPROVAL_LABEL, STATE_LABEL, TASK_TYPE_LABEL, allReviewersApproved, gatesComplete } from '@/lib/permissions'
 import type { Task, User } from '@/lib/types'
-import { Avatar, Badge } from '@/components/ui'
+import { Avatar, Badge, Dialog } from '@/components/ui'
 
 export function TypeBadge({ type }: { type: Task['taskType'] }) {
   return <Badge tone={type === 'bug' ? 'red' : type === 'research' ? 'bone' : 'muted'}>{TASK_TYPE_LABEL[type]}</Badge>
@@ -127,10 +128,15 @@ const COLUMNS: Array<{ key: string; title: string; caption: string; match: (task
 ]
 
 export function TaskBoard({ tasks, users }: { tasks: Task[]; users: User[] }) {
+  const [openColumn, setOpenColumn] = useState<string | null>(null)
+  const activeColumn = COLUMNS.find((column) => column.key === openColumn)
+  const activeItems = activeColumn ? tasks.filter(activeColumn.match) : []
+
   return (
     <div className="board">
       {COLUMNS.map((column) => {
         const items = tasks.filter(column.match)
+        const preview = items.slice(0, 4)
         return (
           <section key={column.key} className="board__col">
             <header className="board__head">
@@ -147,12 +153,38 @@ export function TaskBoard({ tasks, users }: { tasks: Task[]; users: User[] }) {
                   <span>Nothing here yet</span>
                 </div>
               ) : (
-                items.map((task) => <TaskCard key={task.id} task={task} users={users} />)
+                <>
+                  {preview.map((task) => <TaskCard key={task.id} task={task} users={users} />)}
+                  {items.length > preview.length ? (
+                    <button
+                      type="button"
+                      className="board__view-all"
+                      onClick={() => setOpenColumn(column.key)}
+                    >
+                      View all {items.length}
+                    </button>
+                  ) : null}
+                </>
               )}
             </div>
           </section>
         )
       })}
+
+      {activeColumn ? (
+        <Dialog open onClose={() => setOpenColumn(null)} title={activeColumn.title} eyebrow="Task list" wide>
+          <div className="board__list">
+            {activeItems.length === 0 ? (
+              <div className="board__empty">
+                <CircleDashed size={16} />
+                <span>Nothing here yet</span>
+              </div>
+            ) : (
+              activeItems.map((task) => <TaskCard key={task.id} task={task} users={users} />)
+            )}
+          </div>
+        </Dialog>
+      ) : null}
     </div>
   )
 }

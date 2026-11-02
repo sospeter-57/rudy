@@ -252,8 +252,8 @@ func TestCompletionIsPaidOnceAndMovesPoints(t *testing.T) {
 	}
 	if managerAfter, err := env.users.Me(ctx, manager.ID); err != nil {
 		t.Fatalf("manager: %v", err)
-	} else if managerAfter.Points != 0 {
-		t.Fatalf("manager points = %d, want 0", managerAfter.Points)
+	} else if managerAfter.Points != 100 {
+		t.Fatalf("manager points = %d, want 100", managerAfter.Points)
 	}
 
 	if _, err := env.tasks.Complete(ctx, task.ID, manager); err == nil {

@@ -99,14 +99,26 @@ func (s *ChatService) ProjectRooms(ctx context.Context, actor models.User, proje
 	if err != nil {
 		return nil, err
 	}
+	// Project membership grants entry to the project, not to every room: a
+	// member only sees the rooms they have been added to. This keeps the project
+	// overview from linking to rooms the viewer cannot open.
+	visible := make([]models.ChatRoom, 0, len(rooms))
 	for i := range rooms {
+		isMember, err := s.db.Repo().IsChatMember(ctx, rooms[i].ID, actor.ID)
+		if err != nil {
+			return nil, err
+		}
+		if !isMember {
+			continue
+		}
 		members, err := s.db.Repo().ChatRoomMembers(ctx, rooms[i].ID)
 		if err != nil {
 			return nil, err
 		}
 		rooms[i].Members = members
+		visible = append(visible, rooms[i])
 	}
-	return rooms, nil
+	return visible, nil
 }
 
 func (s *ChatService) Discover(ctx context.Context, actor models.User) ([]models.ChatRoom, error) {
