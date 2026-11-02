@@ -53,7 +53,7 @@ export function LandingPage() {
         <div className="auth__hero-main">
           <h1 className="auth__word">RUDY</h1>
           <p className="auth__tagline">
-            Build <em>Responsibly</em> Purposefully
+            Build Responsibly Purposefully
           </p>
           <p className="auth__copy">
             Propose the work. A manager approves what is fit to build. Ship it, get reviewed,
