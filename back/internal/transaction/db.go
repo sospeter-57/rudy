@@ -10,48 +10,148 @@ import (
 	"strconv"
 	"strings"
 
+	_ "github.com/jackc/pgx/v5/stdlib"
 	_ "modernc.org/sqlite"
 )
 
-//go:embed migrations/*.sql
+//go:embed migrations
 var migrationFS embed.FS
 
-type DB struct {
-	sql *sql.DB
+type rebindDB struct {
+	*sql.DB
+	driver string
 }
 
-// Open opens the SQLite database and applies PRAGMAs through the DSN so every
-// pooled connection inherits them.
-func Open(path string) (*DB, error) {
-	dsn := path
-	separator := "?"
-	if strings.Contains(dsn, "?") {
-		separator = "&"
-	}
-	dsn += separator + "_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)"
+type rebindTx struct {
+	*sql.Tx
+	driver string
+}
 
-	db, err := sql.Open("sqlite", dsn)
+type DB struct {
+	sql    *rebindDB
+	driver string
+}
+
+func (d *DB) Driver() string {
+	return d.driver
+}
+
+func (r *rebindDB) rebindQuery(query string) string {
+	if r.driver != "pgx" {
+		return query
+	}
+	return rebind(query)
+}
+
+func (r *rebindDB) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
+	return r.DB.ExecContext(ctx, r.rebindQuery(query), args...)
+}
+
+func (r *rebindDB) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	return r.DB.QueryContext(ctx, r.rebindQuery(query), args...)
+}
+
+func (r *rebindDB) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
+	return r.DB.QueryRowContext(ctx, r.rebindQuery(query), args...)
+}
+
+func (r *rebindDB) BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error) {
+	return r.DB.BeginTx(ctx, opts)
+}
+
+func (t *rebindTx) rebindQuery(query string) string {
+	if t.driver != "pgx" {
+		return query
+	}
+	return rebind(query)
+}
+
+func (t *rebindTx) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
+	return t.Tx.ExecContext(ctx, t.rebindQuery(query), args...)
+}
+
+func (t *rebindTx) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	return t.Tx.QueryContext(ctx, t.rebindQuery(query), args...)
+}
+
+func (t *rebindTx) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
+	return t.Tx.QueryRowContext(ctx, t.rebindQuery(query), args...)
+}
+
+func rebind(query string) string {
+	var b strings.Builder
+	inSingle := false
+	n := 0
+	for i := 0; i < len(query); i++ {
+		c := query[i]
+		if inSingle {
+			b.WriteByte(c)
+			if c == '\'' {
+				if i+1 < len(query) && query[i+1] == '\'' {
+					b.WriteByte(query[i+1])
+					i++
+				} else {
+					inSingle = false
+				}
+			}
+			continue
+		}
+		if c == '\'' {
+			inSingle = true
+			b.WriteByte(c)
+			continue
+		}
+		if c == '?' {
+			n++
+			fmt.Fprintf(&b, "$%d", n)
+			continue
+		}
+		b.WriteByte(c)
+	}
+	return b.String()
+}
+
+// Open opens either a PostgreSQL database (when dsn starts with postgres:// or
+// postgresql://) or a SQLite file (otherwise).
+func Open(dsn string) (*DB, error) {
+	driver := "sqlite"
+	if strings.HasPrefix(dsn, "postgres://") || strings.HasPrefix(dsn, "postgresql://") {
+		driver = "pgx"
+	} else {
+		separator := "?"
+		if strings.Contains(dsn, "?") {
+			separator = "&"
+		}
+		dsn += separator + "_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)"
+	}
+
+	db, err := sql.Open(driver, dsn)
 	if err != nil {
 		return nil, err
 	}
 
-	// SQLite only supports one writer. A single connection keeps transactions
-	// predictable and avoids lock contention in this small service.
-	db.SetMaxOpenConns(1)
+	if driver == "sqlite" {
+		// SQLite only supports one writer. A single connection keeps transactions
+		// predictable and avoids lock contention in this small service.
+		db.SetMaxOpenConns(1)
+	} else {
+		db.SetMaxOpenConns(10)
+		db.SetMaxIdleConns(5)
+	}
 
 	if err := db.Ping(); err != nil {
 		_ = db.Close()
 		return nil, err
 	}
 
-	return &DB{sql: db}, nil
+	return &DB{sql: &rebindDB{DB: db, driver: driver}, driver: driver}, nil
 }
 
 func (d *DB) Close() error {
-	return d.sql.Close()
+	return d.sql.DB.Close()
 }
 
-func (d *DB) SQL() *sql.DB {
+func (d *DB) SQL() *rebindDB {
 	return d.sql
 }
 
@@ -95,7 +195,7 @@ func (d *DB) Migrate(ctx context.Context) error {
 	// connection, so an open result set would block BeginTx forever.
 	rows.Close()
 
-	migrations, err := loadMigrations()
+	migrations, err := loadMigrations(d.driver)
 	if err != nil {
 		return err
 	}
@@ -116,15 +216,16 @@ func (d *DB) applyMigration(ctx context.Context, m migration) error {
 	if err != nil {
 		return err
 	}
+	wrapped := &rebindTx{Tx: tx, driver: d.driver}
 	defer func() { _ = tx.Rollback() }()
 
 	for _, statement := range m.statements {
-		if _, err := tx.ExecContext(ctx, statement); err != nil {
-			return err
+		if _, err := wrapped.ExecContext(ctx, statement); err != nil {
+			return fmt.Errorf("%s: %w", statement, err)
 		}
 	}
-	if _, err := tx.ExecContext(ctx,
-		`INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, datetime('now'))`,
+	if _, err := wrapped.ExecContext(ctx,
+		`INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, CURRENT_TIMESTAMP)`,
 		m.version, m.name,
 	); err != nil {
 		return err
@@ -132,8 +233,12 @@ func (d *DB) applyMigration(ctx context.Context, m migration) error {
 	return tx.Commit()
 }
 
-func loadMigrations() ([]migration, error) {
-	entries, err := fs.ReadDir(migrationFS, "migrations")
+func loadMigrations(driver string) ([]migration, error) {
+	dir := "migrations"
+	if driver == "pgx" {
+		dir = "migrations/postgres"
+	}
+	entries, err := fs.ReadDir(migrationFS, dir)
 	if err != nil {
 		return nil, err
 	}
@@ -147,7 +252,7 @@ func loadMigrations() ([]migration, error) {
 		if err != nil {
 			return nil, err
 		}
-		body, err := migrationFS.ReadFile("migrations/" + entry.Name())
+		body, err := migrationFS.ReadFile(dir + "/" + entry.Name())
 		if err != nil {
 			return nil, err
 		}

@@ -38,7 +38,8 @@ func (d *DB) WithTx(ctx context.Context, fn func(*Repo) error) error {
 	if err != nil {
 		return err
 	}
-	if err := fn(&Repo{q: tx}); err != nil {
+	wrapped := &rebindTx{Tx: tx, driver: d.driver}
+	if err := fn(&Repo{q: wrapped}); err != nil {
 		_ = tx.Rollback()
 		return err
 	}
@@ -76,15 +77,13 @@ func scanUser(row scanner) (models.User, error) {
 }
 
 func (r *Repo) CreateUser(ctx context.Context, username, passwordHash string, role models.Role, createdAt time.Time) (models.User, error) {
-	result, err := r.q.ExecContext(ctx, `
+	var id int64
+	err := r.q.QueryRowContext(ctx, `
 		INSERT INTO users (username, password_hash, role, points, created_at)
-		VALUES (?, ?, ?, 0, ?)`,
+		VALUES (?, ?, ?, 0, ?)
+		RETURNING id`,
 		username, passwordHash, role, formatTime(createdAt),
-	)
-	if err != nil {
-		return models.User{}, err
-	}
-	id, err := result.LastInsertId()
+	).Scan(&id)
 	if err != nil {
 		return models.User{}, err
 	}
@@ -100,15 +99,13 @@ func (r *Repo) CreateUser(ctx context.Context, username, passwordHash string, ro
 // CreateGoogleUser inserts an account that authenticates through Google only.
 // passwordHash is an unusable placeholder, so password login can never match.
 func (r *Repo) CreateGoogleUser(ctx context.Context, username, email, googleSub, passwordHash string, role models.Role, createdAt time.Time) (models.User, error) {
-	result, err := r.q.ExecContext(ctx, `
+	var id int64
+	err := r.q.QueryRowContext(ctx, `
 		INSERT INTO users (username, email, google_sub, password_hash, role, points, created_at)
-		VALUES (?, ?, ?, ?, ?, 0, ?)`,
+		VALUES (?, ?, ?, ?, ?, 0, ?)
+		RETURNING id`,
 		username, email, googleSub, passwordHash, role, formatTime(createdAt),
-	)
-	if err != nil {
-		return models.User{}, err
-	}
-	id, err := result.LastInsertId()
+	).Scan(&id)
 	if err != nil {
 		return models.User{}, err
 	}
@@ -125,7 +122,7 @@ func (r *Repo) CreateGoogleUser(ctx context.Context, username, email, googleSub,
 func (r *Repo) UserByUsername(ctx context.Context, username string) (models.User, string, error) {
 	row := r.q.QueryRowContext(ctx, `
 		SELECT id, username, email, role, points, created_at, password_hash
-		FROM users WHERE username = ? COLLATE NOCASE`, username)
+		FROM users WHERE LOWER(username) = LOWER(?)`, username)
 	var (
 		user         models.User
 		email        sql.NullString
@@ -158,7 +155,7 @@ func (r *Repo) UserByID(ctx context.Context, id int64) (models.User, error) {
 func (r *Repo) UserByEmail(ctx context.Context, email string) (models.User, error) {
 	row := r.q.QueryRowContext(ctx, `
 		SELECT id, username, email, role, points, created_at
-		FROM users WHERE email = ? COLLATE NOCASE`, email)
+		FROM users WHERE LOWER(email) = LOWER(?)`, email)
 	user, err := scanUser(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return models.User{}, models.NotFound("user not found")
@@ -264,15 +261,13 @@ func (r *Repo) DeleteExpiredSessions(ctx context.Context, now time.Time) error {
 }
 
 func (r *Repo) CreateProject(ctx context.Context, name, description string, ttl int, creatorID int64, createdAt time.Time) (models.Project, error) {
-	result, err := r.q.ExecContext(ctx, `
+	var id int64
+	err := r.q.QueryRowContext(ctx, `
 		INSERT INTO projects (name, description, ttl, creator_id, created_at)
-		VALUES (?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?)
+		RETURNING id`,
 		name, description, ttl, creatorID, formatTime(createdAt),
-	)
-	if err != nil {
-		return models.Project{}, err
-	}
-	id, err := result.LastInsertId()
+	).Scan(&id)
 	if err != nil {
 		return models.Project{}, err
 	}
@@ -333,19 +328,17 @@ func (r *Repo) CreateTask(ctx context.Context, task models.Task) (int64, error) 
 	if task.AssigneeID != nil {
 		assignee = *task.AssigneeID
 	}
-	result, err := r.q.ExecContext(ctx, `
+	var id int64
+	err := r.q.QueryRowContext(ctx, `
 		INSERT INTO tasks (
 			project_id, description, task_type, task_state, approval_state,
 			creator_id, assignee_id, role, points, rejection_reason, created_at, completed_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		RETURNING id`,
 		task.ProjectID, task.Description, task.TaskType, task.TaskState, task.ApprovalState,
 		task.CreatorID, assignee, task.Role, task.Points, nullString(task.RejectionReason),
 		formatTime(task.CreatedAt), nil,
-	)
-	if err != nil {
-		return 0, err
-	}
-	id, err := result.LastInsertId()
+	).Scan(&id)
 	if err != nil {
 		return 0, err
 	}
@@ -640,15 +633,13 @@ func (r *Repo) MarkTaskCompleted(ctx context.Context, taskID int64, completedAt 
 }
 
 func (r *Repo) InsertLedgerEntry(ctx context.Context, entry models.LedgerEntry) (models.LedgerEntry, error) {
-	result, err := r.q.ExecContext(ctx, `
+	var id int64
+	err := r.q.QueryRowContext(ctx, `
 		INSERT INTO ledger_entries (user_id, task_id, project_id, reason, points, note, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+		RETURNING id`,
 		entry.UserID, entry.TaskID, entry.ProjectID, entry.Reason, entry.Points, entry.Note, formatTime(entry.CreatedAt),
-	)
-	if err != nil {
-		return models.LedgerEntry{}, err
-	}
-	id, err := result.LastInsertId()
+	).Scan(&id)
 	if err != nil {
 		return models.LedgerEntry{}, err
 	}
@@ -743,13 +734,15 @@ func (r *Repo) UpsertPreferences(ctx context.Context, userID int64, preferences 
 // ---------- project join requests ----------
 
 func (r *Repo) CreateProjectJoinRequest(ctx context.Context, projectID, requesterID int64, createdAt time.Time) (int64, error) {
-	result, err := r.q.ExecContext(ctx, `
+	var id int64
+	err := r.q.QueryRowContext(ctx, `
 		INSERT INTO project_join_requests (project_id, requester_id, status, created_at)
-		VALUES (?, ?, 'pending', ?)`, projectID, requesterID, formatTime(createdAt))
+		VALUES (?, ?, 'pending', ?)
+		RETURNING id`, projectID, requesterID, formatTime(createdAt)).Scan(&id)
 	if err != nil {
 		return 0, err
 	}
-	return result.LastInsertId()
+	return id, nil
 }
 
 func (r *Repo) ProjectJoinRequests(ctx context.Context, projectID int64) ([]models.ProjectJoinRequest, error) {

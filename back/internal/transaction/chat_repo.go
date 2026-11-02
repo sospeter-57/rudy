@@ -149,16 +149,14 @@ func (r *Repo) CreateChatRoom(ctx context.Context, input NewRoom) (models.ChatRo
 		dmKey = *input.DMKey
 	}
 
-	result, err := r.q.ExecContext(ctx, `
+	var id int64
+	err := r.q.QueryRowContext(ctx, `
 		INSERT INTO chat_rooms (kind, name, purpose, project_id, created_by, dm_key, visibility, status, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		RETURNING id`,
 		input.Kind, input.Name, input.Purpose, projectID, input.CreatedBy, dmKey,
 		input.Visibility, input.Status, formatTime(input.CreatedAt),
-	)
-	if err != nil {
-		return models.ChatRoom{}, err
-	}
-	id, err := result.LastInsertId()
+	).Scan(&id)
 	if err != nil {
 		return models.ChatRoom{}, err
 	}
@@ -444,13 +442,11 @@ func (r *Repo) MarkChatRead(ctx context.Context, roomID, userID, messageID int64
 // ---------- messages ----------
 
 func (r *Repo) CreateChatMessage(ctx context.Context, roomID, senderID int64, body string, createdAt time.Time) (models.ChatMessage, error) {
-	result, err := r.q.ExecContext(ctx, `
+	var id int64
+	err := r.q.QueryRowContext(ctx, `
 		INSERT INTO chat_messages (room_id, sender_id, body, created_at)
-		VALUES (?, ?, ?, ?)`, roomID, senderID, body, formatTime(createdAt))
-	if err != nil {
-		return models.ChatMessage{}, err
-	}
-	id, err := result.LastInsertId()
+		VALUES (?, ?, ?, ?)
+		RETURNING id`, roomID, senderID, body, formatTime(createdAt)).Scan(&id)
 	if err != nil {
 		return models.ChatMessage{}, err
 	}
@@ -660,16 +656,14 @@ func (r *Repo) CreateChatAttachment(ctx context.Context, roomID, uploaderID int6
 		heightValue = *height
 	}
 
-	result, err := r.q.ExecContext(ctx, `
+	var id int64
+	err := r.q.QueryRowContext(ctx, `
 		INSERT INTO chat_attachments
 			(room_id, uploader_id, storage_key, filename, mime, size_bytes, width, height, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		RETURNING id`,
 		roomID, uploaderID, storageKey, filename, mime, sizeBytes, widthValue, heightValue, formatTime(createdAt),
-	)
-	if err != nil {
-		return models.ChatAttachment{}, err
-	}
-	id, err := result.LastInsertId()
+	).Scan(&id)
 	if err != nil {
 		return models.ChatAttachment{}, err
 	}
@@ -757,16 +751,18 @@ func (r *Repo) ChatAttachmentsForMessages(ctx context.Context, messageIDs []int6
 // ---------- requests ----------
 
 func (r *Repo) CreateChatRequest(ctx context.Context, requesterID int64, name, purpose string, visibility models.RoomVisibility, status string, roomID int64, reviewedAt, createdAt time.Time) (int64, error) {
-	result, err := r.q.ExecContext(ctx, `
+	var id int64
+	err := r.q.QueryRowContext(ctx, `
 		INSERT INTO chat_requests
 			(requester_id, name, purpose, visibility, status, room_id, created_at, reviewed_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		RETURNING id`,
 		requesterID, name, purpose, visibility, status, roomID, formatTime(createdAt), formatTime(reviewedAt),
-	)
+	).Scan(&id)
 	if err != nil {
 		return 0, err
 	}
-	return result.LastInsertId()
+	return id, nil
 }
 
 func (r *Repo) AddChatRequestInvite(ctx context.Context, requestID, userID int64) error {

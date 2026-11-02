@@ -60,8 +60,14 @@ func loadEnvFile(logger *slog.Logger) {
 }
 
 func run(logger *slog.Logger) error {
-	dbPath := env("RUDY_DB", "rudy.db")
-	db, err := transaction.Open(dbPath)
+	dsn := env("RUDY_NEON_DB", "")
+	if dsn == "" {
+		dsn = env("RUDY_DATABASE_URL", "")
+	}
+	if dsn == "" {
+		dsn = env("RUDY_DB", "rudy.db")
+	}
+	db, err := transaction.Open(dsn)
 	if err != nil {
 		return err
 	}
@@ -104,7 +110,7 @@ func run(logger *slog.Logger) error {
 
 	serverErr := make(chan error, 1)
 	go func() {
-		logger.Info("starting server", "addr", srv.Addr, "db", dbPath)
+		logger.Info("starting server", "addr", srv.Addr, "db", dsn)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			serverErr <- err
 		}
