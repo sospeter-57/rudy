@@ -193,6 +193,25 @@ type statusWriter struct {
 	wrote  bool
 }
 
+// Unwrap lets http.ResponseController reach the underlying writer for things
+// like SetWriteDeadline on the SSE stream.
+func (w *statusWriter) Unwrap() http.ResponseWriter {
+	return w.ResponseWriter
+}
+
+// Flush forwards to the underlying writer so streaming handlers keep working
+// through the logging middleware.
+func (w *statusWriter) Flush() {
+	flusher, ok := w.ResponseWriter.(http.Flusher)
+	if !ok {
+		return
+	}
+	if !w.wrote {
+		w.WriteHeader(http.StatusOK)
+	}
+	flusher.Flush()
+}
+
 func (w *statusWriter) WriteHeader(status int) {
 	if w.wrote {
 		return

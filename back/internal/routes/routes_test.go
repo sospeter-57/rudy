@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -13,6 +14,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -411,5 +413,45 @@ func TestChatEndpointsAndUploads(t *testing.T) {
 	status, _ = api.do(t, http.MethodGet, "/attachments/"+strconv.FormatInt(int64(attachmentID), 10), "", nil)
 	if status != http.StatusUnauthorized {
 		t.Fatalf("unauthenticated attachment status = %d, want 401", status)
+	}
+}
+
+func TestChatEventStreamStartsThroughMiddleware(t *testing.T) {
+	api := newTestAPI(t)
+
+	status, payload := api.do(t, http.MethodPost, "/register", "", map[string]any{
+		"username": "streamer",
+		"password": "password123",
+		"role":     "Frontend Engineer",
+	})
+	if status != http.StatusCreated {
+		t.Fatalf("register: %d (%v)", status, payload)
+	}
+	token, _ := payload["token"].(string)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, api.server.URL+"/chat/events", nil)
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	request.Header.Set("Authorization", "Bearer "+token)
+
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("stream: %v", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("stream status = %d, want 200", response.StatusCode)
+	}
+
+	line, err := bufio.NewReader(response.Body).ReadString('\n')
+	if err != nil {
+		t.Fatalf("read ready frame: %v", err)
+	}
+	if strings.TrimSpace(line) != "event: ready" {
+		t.Fatalf("first frame = %q, want event: ready", strings.TrimSpace(line))
 	}
 }
