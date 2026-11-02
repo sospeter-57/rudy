@@ -123,6 +123,9 @@ func TestGatesRequireApprovalFirst(t *testing.T) {
 	manager := env.register(t, "nova", models.Lead).User
 	engineer := env.register(t, "ari", models.FrontendEngineer).User
 	project := env.project(t, manager)
+	if _, err := env.projects.AddMember(ctx, project.ID, manager.ID, engineer.ID); err != nil {
+		t.Fatalf("add member: %v", err)
+	}
 
 	task, err := env.tasks.Create(ctx, project.ID, engineer, "Build the checkout", models.Feature, models.FrontendEngineer, 20, nil)
 	if err != nil {
@@ -156,6 +159,9 @@ func TestAssigneeCannotReviewOwnWork(t *testing.T) {
 	engineer := env.register(t, "ari", models.FrontendEngineer).User
 	reviewer := env.register(t, "mira", models.QualityAssuranceE).User
 	project := env.project(t, manager)
+	if _, err := env.projects.AddMember(ctx, project.ID, manager.ID, engineer.ID); err != nil {
+		t.Fatalf("add member: %v", err)
+	}
 
 	task, err := env.tasks.Create(ctx, project.ID, engineer, "Build the checkout", models.Feature, models.FrontendEngineer, 20, nil)
 	if err != nil {
@@ -199,6 +205,9 @@ func TestCompletionIsPaidOnceAndMovesPoints(t *testing.T) {
 	engineer := env.register(t, "ari", models.FrontendEngineer).User
 	reviewer := env.register(t, "mira", models.QualityAssuranceE).User
 	project := env.project(t, manager)
+	if _, err := env.projects.AddMember(ctx, project.ID, manager.ID, engineer.ID); err != nil {
+		t.Fatalf("add member: %v", err)
+	}
 
 	task, err := env.tasks.Create(ctx, project.ID, engineer, "Build the checkout", models.Feature, models.FrontendEngineer, 30, nil)
 	if err != nil {

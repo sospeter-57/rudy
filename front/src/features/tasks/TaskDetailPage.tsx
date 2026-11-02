@@ -21,7 +21,7 @@ import {
   X,
 } from 'lucide-react'
 import { api } from '@/lib/api'
-import { useMe, useProject, useTask, useUsers } from '@/lib/hooks'
+import { useMe, useProject, useProjectMembers, useTask, useUsers } from '@/lib/hooks'
 import {
   canAddReviewer,
   canEditAcceptance,
@@ -74,6 +74,7 @@ export function TaskDetailPage() {
   const me = useMe().data
   const { data: task, isLoading } = useTask(taskId)
   const { data: users = [] } = useUsers()
+  const { data: projectMembers = [] } = useProjectMembers(task?.projectId ?? 0)
   const { data: project } = useProject(task?.projectId ?? 0)
 
   const [gateDialog, setGateDialog] = useState<{ gate: Gate; value: string } | null>(null)
@@ -434,9 +435,11 @@ export function TaskDetailPage() {
                     <div className="manager__assign-row">
                       <Select value={assignee} onChange={(e) => setAssignee(Number(e.target.value))} disabled={task.taskState === 'completed'}>
                         <option value={0} disabled>Unassigned</option>
-                        {users.map((user) => (
-                          <option key={user.id} value={user.id}>{user.username} — {user.role}</option>
-                        ))}
+                        {users
+                          .filter((user) => projectMembers.length === 0 || projectMembers.some((member) => member.userId === user.id))
+                          .map((user) => (
+                            <option key={user.id} value={user.id}>{user.username} — {user.role}</option>
+                          ))}
                       </Select>
                       <Button
                         variant="outline"

@@ -174,6 +174,13 @@ func (s *TaskService) Assign(ctx context.Context, taskID, assigneeID int64, acto
 	if !exists {
 		return models.Task{}, models.NotFound("assignee not found")
 	}
+	isMember, err := s.db.Repo().IsProjectMember(ctx, task.ProjectID, assigneeID)
+	if err != nil {
+		return models.Task{}, err
+	}
+	if !isMember {
+		return models.Task{}, models.Validation("the assignee must be a member of this project")
+	}
 	if err := s.db.Repo().UpdateTaskAssignee(ctx, taskID, assigneeID); err != nil {
 		return models.Task{}, err
 	}
