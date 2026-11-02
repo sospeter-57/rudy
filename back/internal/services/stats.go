@@ -44,7 +44,7 @@ func (s *StatsService) Stats(ctx context.Context, requestedRange string) (models
 	if stats.Totals.Users, err = s.count(ctx, `SELECT COUNT(*) FROM users`, bounded, since, "created_at"); err != nil {
 		return models.Stats{}, err
 	}
-	if stats.Totals.Builders, err = s.count(ctx, `SELECT COUNT(*) FROM users WHERE role <> 'Project Manager'`, bounded, since, "created_at"); err != nil {
+	if stats.Totals.Builders, err = s.count(ctx, `SELECT COUNT(*) FROM users WHERE role <> 'Lead'`, bounded, since, "created_at"); err != nil {
 		return models.Stats{}, err
 	}
 	if stats.Totals.Projects, err = s.count(ctx, `SELECT COUNT(*) FROM projects`, bounded, since, "created_at"); err != nil {
@@ -135,6 +135,8 @@ func normalizeRange(value string, now time.Time) (string, time.Time, bool) {
 		return "all", time.Time{}, false
 	case "90d":
 		return "90d", now.AddDate(0, 0, -90), true
+	case "7d":
+		return "7d", now.AddDate(0, 0, -7), true
 	case "", "30d":
 		return "30d", now.AddDate(0, 0, -30), true
 	default:

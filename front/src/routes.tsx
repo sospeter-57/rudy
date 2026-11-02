@@ -8,6 +8,7 @@ import { ProjectDetailPage } from '@/features/projects/ProjectDetailPage'
 import { TasksPage } from '@/features/tasks/TasksPage'
 import { TaskDetailPage } from '@/features/tasks/TaskDetailPage'
 import { ReviewPage } from '@/features/review/ReviewPage'
+import { ChatPage } from '@/features/chat/ChatPage'
 import { ProfilePage } from '@/features/profile/ProfilePage'
 import { StatsPage } from '@/features/stats/StatsPage'
 import { SettingsPage } from '@/features/settings/SettingsPage'
@@ -35,6 +36,8 @@ export function AppRoutes() {
         <Route path="/projects/:id" element={<ProjectDetailPage />} />
         <Route path="/tasks" element={<TasksPage />} />
         <Route path="/tasks/:id" element={<TaskDetailPage />} />
+        <Route path="/chat" element={<ChatPage />} />
+        <Route path="/chat/:roomId" element={<ChatPage />} />
         <Route path="/review" element={<ReviewPage />} />
         <Route path="/profile" element={<ProfilePage />} />
         <Route path="/stats" element={<StatsPage />} />

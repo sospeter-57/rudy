@@ -1,14 +1,21 @@
 import {
   ApiError,
   type AuthSession,
+  type ChatAttachment,
+  type ChatMessage,
+  type ChatRequest,
+  type ChatRoom,
   type LeaderboardRow,
   type LedgerEntry,
+  type OpenRoomResult,
   type Preferences,
   type PreferencesInput,
   type Project,
   type ProjectDraft,
+  type ProjectMember,
   type RegisterDraft,
   type Role,
+  type RoomVisibility,
   type Stats,
   type StatsRange,
   type Task,
@@ -28,6 +35,25 @@ export interface TaskFilter {
 export interface CompletionResult {
   task: Task
   awards: LedgerEntry[]
+}
+
+/** One server-sent chat event, as delivered by `GET /chat/events`. */
+export interface ChatStreamEvent {
+  type: string
+  data: unknown
+}
+
+export interface OpenRoomDraft {
+  name: string
+  purpose: string
+  visibility: RoomVisibility
+  inviteIds?: number[]
+}
+
+export interface ProjectRoomDraft {
+  name: string
+  purpose: string
+  memberIds?: number[]
 }
 
 /**
@@ -61,13 +87,46 @@ export interface ApiClient {
   getPreferences(): Promise<Preferences>
   updatePreferences(draft: PreferencesInput): Promise<Preferences>
   getStats(range: StatsRange): Promise<Stats>
+
+  // Projects: explicit membership, curated by the project lead.
+  listProjectMembers(projectId: number): Promise<ProjectMember[]>
+  addProjectMember(projectId: number, userId: number): Promise<ProjectMember[]>
+  removeProjectMember(projectId: number, userId: number): Promise<ProjectMember[]>
+  listProjectChats(projectId: number): Promise<ChatRoom[]>
+  createProjectChat(projectId: number, draft: ProjectRoomDraft): Promise<ChatRoom>
+
+  // Chat.
+  listChats(): Promise<ChatRoom[]>
+  getChat(roomId: number): Promise<ChatRoom>
+  chatUnread(): Promise<number>
+  discoverChats(): Promise<ChatRoom[]>
+  listChatRequests(): Promise<ChatRequest[]>
+  openDM(userId: number): Promise<ChatRoom>
+  createOpenRoom(draft: OpenRoomDraft): Promise<OpenRoomResult>
+  updateChat(roomId: number, draft: { name: string; purpose: string; visibility: RoomVisibility }): Promise<ChatRoom>
+  archiveChat(roomId: number): Promise<void>
+  joinChat(roomId: number): Promise<ChatRoom>
+  leaveChat(roomId: number): Promise<void>
+  addChatMember(roomId: number, userId: number): Promise<ChatRoom>
+  removeChatMember(roomId: number, userId: number): Promise<ChatRoom>
+  listChatMessages(roomId: number, before?: number, limit?: number): Promise<ChatMessage[]>
+  sendChatMessage(roomId: number, body: string, attachmentIds?: number[]): Promise<ChatMessage>
+  editChatMessage(messageId: number, body: string): Promise<ChatMessage>
+  deleteChatMessage(messageId: number): Promise<void>
+  markChatRead(roomId: number, messageId: number): Promise<void>
+  uploadChatAttachment(roomId: number, file: File): Promise<ChatAttachment>
+  fetchChatAttachment(attachmentId: number): Promise<Blob>
+  streamChatEvents(onEvent: (event: ChatStreamEvent) => void, signal: AbortSignal): Promise<void>
 }
 
 const BASE = config.apiBase
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers)
-  if (init.body) headers.set('Content-Type', 'application/json')
+  // FormData sets its own multipart boundary; everything else is JSON.
+  if (init.body && !(init.body instanceof FormData)) {
+    headers.set('Content-Type', 'application/json')
+  }
 
   const token = getToken()
   if (token) headers.set('Authorization', `Bearer ${token}`)
@@ -96,6 +155,78 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   }
 
   return payload as T
+}
+
+/** Fetches an authenticated binary response and returns it as a blob. */
+async function requestBlob(path: string): Promise<Blob> {
+  const token = getToken()
+  const headers = new Headers()
+  if (token) headers.set('Authorization', `Bearer ${token}`)
+
+  const response = await fetch(`${BASE}${path}`, { headers })
+  if (!response.ok) {
+    if (response.status === 401 && token) {
+      clearStoredSession()
+      notifySignOut()
+    }
+    throw new ApiError(response.status, `Request failed (${response.status})`)
+  }
+  return response.blob()
+}
+
+/**
+ * Reads the authenticated chat event stream. Native EventSource cannot send a
+ * bearer header, so this parses the SSE frames from a fetch body instead.
+ */
+async function streamChatEvents(
+  onEvent: (event: ChatStreamEvent) => void,
+  signal: AbortSignal,
+): Promise<void> {
+  const token = getToken()
+  const headers = new Headers({ Accept: 'text/event-stream' })
+  if (token) headers.set('Authorization', `Bearer ${token}`)
+
+  const response = await fetch(`${BASE}/chat/events`, { headers, signal })
+  if (!response.ok || !response.body) {
+    if (response.status === 401 && token) {
+      clearStoredSession()
+      notifySignOut()
+    }
+    throw new ApiError(response.status, `Chat stream failed (${response.status})`)
+  }
+
+  const reader = response.body.pipeThrough(new TextDecoderStream()).getReader()
+  let buffer = ''
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) return
+    buffer += value
+
+    let boundary = buffer.indexOf('\n\n')
+    while (boundary !== -1) {
+      const frame = buffer.slice(0, boundary)
+      buffer = buffer.slice(boundary + 2)
+      boundary = buffer.indexOf('\n\n')
+
+      let type = 'message'
+      const dataLines: string[] = []
+      for (const line of frame.split('\n')) {
+        if (line.startsWith('event:')) type = line.slice(6).trim()
+        else if (line.startsWith('data:')) dataLines.push(line.slice(5).trim())
+      }
+      if (dataLines.length === 0) continue
+
+      const raw = dataLines.join('\n')
+      let data: unknown = raw
+      try {
+        data = JSON.parse(raw) as unknown
+      } catch {
+        // Keep the raw payload; the caller only needs a reason to refetch.
+      }
+      onEvent({ type, data })
+    }
+  }
 }
 
 function query(params: Record<string, string | number | undefined>): string {
@@ -245,4 +376,140 @@ export const api: ApiClient = {
   async getStats(range) {
     return (await request<{ stats: Stats }>(`/stats${query({ range })}`, { method: 'GET' })).stats
   },
+
+  async listProjectMembers(projectId) {
+    return (await request<{ members: ProjectMember[] }>(`/project/${projectId}/members`, { method: 'GET' })).members
+  },
+
+  async addProjectMember(projectId, userId) {
+    return (
+      await request<{ members: ProjectMember[] }>(`/project/${projectId}/members`, {
+        method: 'POST',
+        body: JSON.stringify({ userId }),
+      })
+    ).members
+  },
+
+  async removeProjectMember(projectId, userId) {
+    return (
+      await request<{ members: ProjectMember[] }>(`/project/${projectId}/members/${userId}`, {
+        method: 'DELETE',
+      })
+    ).members
+  },
+
+  async listProjectChats(projectId) {
+    return (await request<{ rooms: ChatRoom[] }>(`/project/${projectId}/chats`, { method: 'GET' })).rooms
+  },
+
+  async createProjectChat(projectId, draft) {
+    return (
+      await request<{ room: ChatRoom }>(`/project/${projectId}/chats`, {
+        method: 'POST',
+        body: JSON.stringify(draft),
+      })
+    ).room
+  },
+
+  async listChats() {
+    return (await request<{ rooms: ChatRoom[] }>('/chats', { method: 'GET' })).rooms
+  },
+
+  async getChat(roomId) {
+    return (await request<{ room: ChatRoom }>(`/chat/${roomId}`, { method: 'GET' })).room
+  },
+
+  async chatUnread() {
+    return (await request<{ unread: number }>('/chat/unread', { method: 'GET' })).unread
+  },
+
+  async discoverChats() {
+    return (await request<{ rooms: ChatRoom[] }>('/chat/discover', { method: 'GET' })).rooms
+  },
+
+  async listChatRequests() {
+    return (await request<{ requests: ChatRequest[] }>('/chat/requests', { method: 'GET' })).requests
+  },
+
+  async openDM(userId) {
+    return (await request<{ room: ChatRoom }>('/chat/dm', { method: 'POST', body: JSON.stringify({ userId }) })).room
+  },
+
+  createOpenRoom: (draft) =>
+    request<OpenRoomResult>('/chat', { method: 'POST', body: JSON.stringify(draft) }),
+
+  async updateChat(roomId, draft) {
+    return (
+      await request<{ room: ChatRoom }>(`/chat/${roomId}`, {
+        method: 'PUT',
+        body: JSON.stringify(draft),
+      })
+    ).room
+  },
+
+  archiveChat: (roomId) => request<void>(`/chat/${roomId}`, { method: 'DELETE' }),
+  async joinChat(roomId) {
+    return (await request<{ room: ChatRoom }>(`/chat/${roomId}/join`, { method: 'POST' })).room
+  },
+  leaveChat: (roomId) => request<void>(`/chat/${roomId}/leave`, { method: 'POST' }),
+
+  async addChatMember(roomId, userId) {
+    return (
+      await request<{ room: ChatRoom }>(`/chat/${roomId}/members`, {
+        method: 'POST',
+        body: JSON.stringify({ userId }),
+      })
+    ).room
+  },
+
+  async removeChatMember(roomId, userId) {
+    return (await request<{ room: ChatRoom }>(`/chat/${roomId}/members/${userId}`, { method: 'DELETE' })).room
+  },
+
+  async listChatMessages(roomId, before, limit) {
+    return (
+      await request<{ messages: ChatMessage[] }>(
+        `/chat/${roomId}/messages${query({ before, limit })}`,
+        { method: 'GET' },
+      )
+    ).messages
+  },
+
+  async sendChatMessage(roomId, body, attachmentIds) {
+    return (
+      await request<{ message: ChatMessage }>(`/chat/${roomId}/messages`, {
+        method: 'POST',
+        body: JSON.stringify({ body, attachmentIds }),
+      })
+    ).message
+  },
+
+  async editChatMessage(messageId, body) {
+    return (
+      await request<{ message: ChatMessage }>(`/chat/message/${messageId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ body }),
+      })
+    ).message
+  },
+
+  deleteChatMessage: (messageId) => request<void>(`/chat/message/${messageId}`, { method: 'DELETE' }),
+
+  markChatRead: (roomId, messageId) =>
+    request<void>(`/chat/${roomId}/read`, { method: 'POST', body: JSON.stringify({ messageId }) }),
+
+  async uploadChatAttachment(roomId, file) {
+    const form = new FormData()
+    form.append('file', file)
+    return (
+      await request<{ attachment: ChatAttachment }>(`/chat/${roomId}/attachments`, {
+        method: 'POST',
+        body: form,
+      })
+    ).attachment
+  },
+
+  fetchChatAttachment: (attachmentId) => requestBlob(`/attachments/${attachmentId}`),
+
+  streamChatEvents,
 }

@@ -61,6 +61,42 @@ type reviewRequest struct {
 	Comment  string                `json:"comment"`
 }
 
+type dmRequest struct {
+	UserID int64 `json:"userId"`
+}
+
+type roomRequest struct {
+	Name       string                `json:"name"`
+	Purpose    string                `json:"purpose"`
+	Visibility models.RoomVisibility `json:"visibility,omitempty"`
+}
+
+type openRoomRequest struct {
+	Name       string                `json:"name"`
+	Purpose    string                `json:"purpose"`
+	Visibility models.RoomVisibility `json:"visibility,omitempty"`
+	InviteIDs  []int64               `json:"inviteIds,omitempty"`
+}
+
+type projectRoomRequest struct {
+	Name      string  `json:"name"`
+	Purpose   string  `json:"purpose"`
+	MemberIDs []int64 `json:"memberIds,omitempty"`
+}
+
+type messageRequest struct {
+	Body          string  `json:"body"`
+	AttachmentIDs []int64 `json:"attachmentIds,omitempty"`
+}
+
+type readRequest struct {
+	MessageID int64 `json:"messageId"`
+}
+
+type memberRequest struct {
+	UserID int64 `json:"userId"`
+}
+
 type preferencesRequest struct {
 	ThemeMode models.ThemeMode `json:"themeMode"`
 	Accent    string           `json:"accent"`

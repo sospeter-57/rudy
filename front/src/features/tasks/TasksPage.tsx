@@ -67,7 +67,7 @@ export function TasksPage() {
     )
   })
 
-  const tabs: View[] = me?.role === 'Project Manager'
+  const tabs: View[] = me?.role === 'Lead'
     ? ['all', 'mine', 'reviewing', 'approvals', 'completed']
     : ['all', 'mine', 'reviewing', 'completed']
 
@@ -76,7 +76,7 @@ export function TasksPage() {
       <PageHeader
         eyebrow="Work queue"
         title={<>Every <em>task</em>, one ledger.</>}
-        description="Propose anything. A manager approves what is fit to build. Reviewers sign off. Points land when it ships."
+        description="Propose anything. A lead approves what is fit to build. Reviewers sign off. Points land when it ships."
         meta={
           <>
             <Badge tone="gold"><Sparkles size={11} /> {tasks.filter((t) => t.taskState !== 'completed').reduce((s, t) => s + t.points, 0)} pts open</Badge>
@@ -125,7 +125,7 @@ export function TasksPage() {
             view === 'reviewing'
               ? 'When a task you review enters auditing, it will appear here.'
               : view === 'approvals'
-                ? 'Proposals from the team will queue up here for a manager decision.'
+                ? 'Proposals from the team will queue up here for a lead decision.'
                 : 'Try another filter, or propose a new task.'
           }
           action={me ? <Button variant="outline" onClick={() => setDialogOpen(true)}><Plus size={15} /> Propose a task</Button> : undefined}

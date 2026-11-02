@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"rudy/internal/models"
+	"rudy/internal/storage"
 	"rudy/internal/transaction"
 )
 
@@ -18,6 +19,7 @@ type testEnv struct {
 	tasks       *TaskService
 	stats       *StatsService
 	preferences *PreferencesService
+	chat        *ChatService
 }
 
 func newTestEnv(t *testing.T) *testEnv {
@@ -33,6 +35,11 @@ func newTestEnv(t *testing.T) *testEnv {
 		t.Fatalf("migrate: %v", err)
 	}
 
+	store, err := storage.NewLocal(filepath.Join(t.TempDir(), "uploads"))
+	if err != nil {
+		t.Fatalf("storage: %v", err)
+	}
+
 	return &testEnv{
 		db:          db,
 		users:       NewUserService(db, time.Hour),
@@ -40,6 +47,7 @@ func newTestEnv(t *testing.T) *testEnv {
 		tasks:       NewTaskService(db),
 		stats:       NewStatsService(db),
 		preferences: NewPreferencesService(db),
+		chat:        NewChatService(db, store, nil),
 	}
 }
 
@@ -112,7 +120,7 @@ func TestGatesRequireApprovalFirst(t *testing.T) {
 	env := newTestEnv(t)
 	ctx := context.Background()
 
-	manager := env.register(t, "nova", models.ProjectManager).User
+	manager := env.register(t, "nova", models.Lead).User
 	engineer := env.register(t, "ari", models.FrontendEngineer).User
 	project := env.project(t, manager)
 
@@ -144,7 +152,7 @@ func TestAssigneeCannotReviewOwnWork(t *testing.T) {
 	env := newTestEnv(t)
 	ctx := context.Background()
 
-	manager := env.register(t, "nova", models.ProjectManager).User
+	manager := env.register(t, "nova", models.Lead).User
 	engineer := env.register(t, "ari", models.FrontendEngineer).User
 	reviewer := env.register(t, "mira", models.QualityAssuranceE).User
 	project := env.project(t, manager)
@@ -187,7 +195,7 @@ func TestCompletionIsPaidOnceAndMovesPoints(t *testing.T) {
 	env := newTestEnv(t)
 	ctx := context.Background()
 
-	manager := env.register(t, "nova", models.ProjectManager).User
+	manager := env.register(t, "nova", models.Lead).User
 	engineer := env.register(t, "ari", models.FrontendEngineer).User
 	reviewer := env.register(t, "mira", models.QualityAssuranceE).User
 	project := env.project(t, manager)
@@ -258,8 +266,8 @@ func TestStatsAndPreferences(t *testing.T) {
 	ctx := context.Background()
 
 	user := env.register(t, "alice", models.FrontendEngineer).User
-	env.register(t, "nova", models.ProjectManager)
-	project := env.project(t, env.register(t, "nora", models.ProjectManager).User)
+	env.register(t, "nova", models.Lead)
+	project := env.project(t, env.register(t, "nora", models.Lead).User)
 
 	if _, err := env.tasks.Create(ctx, project.ID, user, "Build the checkout", models.Feature, models.FrontendEngineer, 15, nil); err != nil {
 		t.Fatalf("create task: %v", err)
@@ -373,7 +381,7 @@ func TestGoogleAuthLinksAnExistingEmailAccount(t *testing.T) {
 	ctx := context.Background()
 	env.users.SetGoogleClientID("rudy-test-client")
 
-	local := env.register(t, "ada", models.ProjectManager).User
+	local := env.register(t, "ada", models.Lead).User
 	if _, err := env.db.SQL().ExecContext(ctx, `UPDATE users SET email = ? WHERE id = ?`, "ada@example.com", local.ID); err != nil {
 		t.Fatalf("seed email: %v", err)
 	}

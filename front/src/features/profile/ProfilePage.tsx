@@ -152,7 +152,7 @@ export function ProfilePage() {
                 <span className="economy-list__icon economy-list__icon--gold"><BadgeCheck size={15} /></span>
                 <div>
                   <strong>Assignee earns the full task value</strong>
-                  <p>When a manager completes the task, its points land on your profile.</p>
+                  <p>When a lead completes the task, its points land on your profile.</p>
                 </div>
               </li>
               <li>
@@ -165,7 +165,7 @@ export function ProfilePage() {
               <li>
                 <span className="economy-list__icon economy-list__icon--red"><Crown size={15} /></span>
                 <div>
-                  <strong>Managers earn nothing for clicking</strong>
+                  <strong>Leads earn nothing for clicking</strong>
                   <p>Approval and completion are duties, not payouts. No self-dealing.</p>
                 </div>
               </li>

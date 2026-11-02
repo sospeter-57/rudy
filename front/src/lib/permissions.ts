@@ -1,19 +1,19 @@
 import type { Role, Task, User } from './types'
 
-export function isManager(user: User | null | undefined): boolean {
-  return user?.role === 'Project Manager'
+export function isLead(user: User | null | undefined): boolean {
+  return user?.role === 'Lead'
 }
 
 export function canCreateProject(user: User | null | undefined): boolean {
-  return isManager(user)
+  return isLead(user)
 }
 
 export function canApprove(user: User | null | undefined): boolean {
-  return isManager(user)
+  return isLead(user)
 }
 
 export function canComplete(user: User | null | undefined): boolean {
-  return isManager(user)
+  return isLead(user)
 }
 
 export function isAssignee(task: Task, user: User | null | undefined): boolean {
@@ -21,11 +21,11 @@ export function isAssignee(task: Task, user: User | null | undefined): boolean {
 }
 
 export function canWorkOn(task: Task, user: User | null | undefined): boolean {
-  return !!user && (isAssignee(task, user) || isManager(user))
+  return !!user && (isAssignee(task, user) || isLead(user))
 }
 
 /**
- * Acceptance evidence and reviewers may only be edited after a manager has
+ * Acceptance evidence and reviewers may only be edited after a lead has
  * approved the task and before the assignee submits it for review. This is the
  * approval-first rule the UI previously ignored.
  */
@@ -104,7 +104,7 @@ export const APPROVAL_LABEL: Record<Task['approvalState'], string> = {
 
 export function roleOptions(): Role[] {
   return [
-    'Project Manager',
+    'Lead',
     'Database Engineer',
     'Frontend Engineer',
     'Backend Engineer',

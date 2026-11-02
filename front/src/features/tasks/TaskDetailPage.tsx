@@ -246,7 +246,7 @@ export function TaskDetailPage() {
         <div className="callout callout--red">
           <MessageSquareWarning size={18} />
           <div>
-            <strong>Changes requested by the manager</strong>
+            <strong>Changes requested by the lead</strong>
             <p>{task.rejectionReason}</p>
           </div>
         </div>
@@ -339,7 +339,7 @@ export function TaskDetailPage() {
             </header>
             {task.acceptance.reviewers.length === 0 ? (
               <p className="muted-copy">
-                No reviewers yet. {canAddReviewer(task, me) ? 'Add at least one before sending the task to review.' : 'Reviewers can be added once a manager approves the task.'}
+                No reviewers yet. {canAddReviewer(task, me) ? 'Add at least one before sending the task to review.' : 'Reviewers can be added once a lead approves the task.'}
               </p>
             ) : (
               <div className="reviewer-list">
@@ -394,7 +394,7 @@ export function TaskDetailPage() {
                   <div>
                     <strong>{step}</strong>
                     <span>
-                      {index === 0 ? 'Anyone can propose' : index === 1 ? 'Manager approves fitness' : index === 2 ? 'Reviewers decide' : 'Points are minted'}
+                      {index === 0 ? 'Anyone can propose' : index === 1 ? 'Lead approves fitness' : index === 2 ? 'Reviewers decide' : 'Points are minted'}
                     </span>
                   </div>
                 </li>
@@ -405,11 +405,11 @@ export function TaskDetailPage() {
             ) : null}
           </section>
 
-          {me.role === 'Project Manager' ? (
+          {me.role === 'Lead' ? (
             <section className="panel panel--tight manager">
               <header className="panel__head">
                 <div>
-                  <span className="eyebrow">Manager desk</span>
+                  <span className="eyebrow">Lead desk</span>
                   <h2 className="panel__title">Decide</h2>
                 </div>
                 <Flag size={18} className="panel__icon" />
@@ -528,7 +528,7 @@ export function TaskDetailPage() {
             <p className="payout-note">
               {task.taskState === 'completed'
                 ? 'The ledger is final. Points are already on the profiles.'
-                : 'Points are minted exactly once, when a Project Manager marks the task completed.'}
+                : 'Points are minted exactly once, when a Lead marks the task completed.'}
             </p>
           </section>
 
@@ -597,7 +597,7 @@ export function TaskDetailPage() {
       <Dialog
         open={rejectOpen}
         onClose={() => setRejectOpen(false)}
-        eyebrow="Manager decision"
+        eyebrow="Lead decision"
         title="Send this back for changes"
         footer={
           <>
@@ -681,7 +681,7 @@ export function TaskDetailPage() {
       <Dialog
         open={completeOpen}
         onClose={() => setCompleteOpen(false)}
-        eyebrow="Manager desk"
+        eyebrow="Lead desk"
         title="Complete and mint points"
         wide
         footer={
@@ -704,7 +704,7 @@ export function TaskDetailPage() {
           <AwardPreview task={task} users={users} />
           <p className="form-note">
             The assignee earns the task's points. Each approving reviewer earns a 15% review bonus.
-            The manager earns nothing for pressing the button — no self-dealing.
+            The lead earns nothing for pressing the button — no self-dealing.
           </p>
         </div>
       </Dialog>

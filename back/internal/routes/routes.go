@@ -14,6 +14,8 @@ type Deps struct {
 	Tasks       *services.TaskService
 	Stats       *services.StatsService
 	Preferences *services.PreferencesService
+	Chat        *services.ChatService
+	CORSOrigins []string
 	Logger      *slog.Logger
 }
 
@@ -23,6 +25,8 @@ type server struct {
 	tasks       *services.TaskService
 	stats       *services.StatsService
 	preferences *services.PreferencesService
+	chat        *services.ChatService
+	cors        *corsPolicy
 	logger      *slog.Logger
 }
 
@@ -39,6 +43,8 @@ func NewRouter(deps Deps) http.Handler {
 		tasks:       deps.Tasks,
 		stats:       deps.Stats,
 		preferences: deps.Preferences,
+		chat:        deps.Chat,
+		cors:        newCORSPolicy(deps.CORSOrigins),
 		logger:      logger,
 	}
 
@@ -68,6 +74,36 @@ func NewRouter(deps Deps) http.Handler {
 	mux.Handle("POST /project", protected(s.createProject))
 	mux.Handle("GET /project/{id}", protected(s.fetchProject))
 
+	// Projects gain explicit membership, curated by the project lead.
+	mux.Handle("GET /project/{id}/members", protected(s.listProjectMembers))
+	mux.Handle("POST /project/{id}/members", protected(s.addProjectMember))
+	mux.Handle("DELETE /project/{id}/members/{userId}", protected(s.removeProjectMember))
+	mux.Handle("GET /project/{id}/chats", protected(s.listProjectChats))
+	mux.Handle("POST /project/{id}/chats", protected(s.createProjectChat))
+
+	// Chat: rooms, messages, attachments and the live event stream.
+	mux.Handle("GET /chats", protected(s.listChats))
+	mux.Handle("GET /chat/discover", protected(s.listDiscoverableChats))
+	mux.Handle("GET /chat/requests", protected(s.listChatRequests))
+	mux.Handle("GET /chat/unread", protected(s.chatUnread))
+	mux.Handle("GET /chat/events", protected(s.chatEvents))
+	mux.Handle("POST /chat", protected(s.createOpenChat))
+	mux.Handle("POST /chat/dm", protected(s.openDM))
+	mux.Handle("GET /chat/{id}", protected(s.fetchChat))
+	mux.Handle("PUT /chat/{id}", protected(s.updateChat))
+	mux.Handle("DELETE /chat/{id}", protected(s.archiveChat))
+	mux.Handle("POST /chat/{id}/join", protected(s.joinChat))
+	mux.Handle("POST /chat/{id}/leave", protected(s.leaveChat))
+	mux.Handle("POST /chat/{id}/members", protected(s.addChatMember))
+	mux.Handle("DELETE /chat/{id}/members/{userId}", protected(s.removeChatMember))
+	mux.Handle("GET /chat/{id}/messages", protected(s.listChatMessages))
+	mux.Handle("POST /chat/{id}/messages", protected(s.sendChatMessage))
+	mux.Handle("POST /chat/{id}/read", protected(s.markChatRead))
+	mux.Handle("POST /chat/{id}/attachments", protected(s.uploadChatAttachment))
+	mux.Handle("PATCH /chat/message/{id}", protected(s.editChatMessage))
+	mux.Handle("DELETE /chat/message/{id}", protected(s.deleteChatMessage))
+	mux.Handle("GET /attachments/{id}", protected(s.serveChatAttachment))
+
 	mux.Handle("GET /tasks", protected(s.listTasks))
 	mux.Handle("GET /task/{id}", protected(s.fetchTask))
 	mux.Handle("POST /project/{id}/task", protected(s.createTask))
@@ -81,5 +117,5 @@ func NewRouter(deps Deps) http.Handler {
 	mux.Handle("POST /task/{id}/review", protected(s.reviewTask))
 	mux.Handle("POST /task/{id}/complete", protected(s.completeTask))
 
-	return recoverPanic(logger, logRequests(logger, requireJSON(mux)))
+	return recoverPanic(logger, logRequests(logger, s.withCORS(requireJSON(mux))))
 }

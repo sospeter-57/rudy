@@ -2,6 +2,27 @@ package main
 
 import "testing"
 
+func TestSplitList(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+		want int
+	}{
+		{name: "empty", raw: ""},
+		{name: "single", raw: "https://app.example.com", want: 1},
+		{name: "comma separated", raw: "https://a.example.com, https://b.example.com", want: 2},
+		{name: "drops blanks", raw: " , https://a.example.com, , ", want: 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := splitList(tt.raw); len(got) != tt.want {
+				t.Fatalf("splitList(%q) = %#v, want %d entries", tt.raw, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestListenAddr(t *testing.T) {
 	tests := []struct {
 		name string

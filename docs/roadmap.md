@@ -22,7 +22,7 @@ reflect impact on collaboration first, then knowledge sharing, then automation.
 | Horizon | Theme | Items |
 | --- | --- | --- |
 | Now | Collaboration | In-app notifications, task blocking visibility, digest email |
-| Next | Conversation | Project chat, task threads, presence |
+| Next | Conversation | Direct messages, project rooms, open groups, images, SSE. *Implemented.* |
 | Next | Knowledge | Articles and experience posts, reactions, comments |
 | Later | Intelligence | Stats insights, proposal drafting, review checklists, semantic search |
 | Continuous | Hardening | CORS allow-list, rate limiting, observability, pagination, frontend tests |
@@ -51,23 +51,33 @@ tasks and pending reviews stall silently.
 
 Details: [plans/notifications.md](plans/notifications.md).
 
-## Milestone 2 — Chat
+## Milestone 2 — Chat (v1 shipped)
 
 **Problem:** discussion about a task lives outside the tool, so decisions and
 context are lost.
 
-**Scope**
+**Shipped**
 
-- Project channels and task threads.
-- Server-Sent Events or WebSocket transport.
-- Message history, edit/delete, mentions.
-- Mentions generate notifications.
-- Basic moderation controls.
+- Private DMs, project rooms curated by the project lead, and discoverable or
+  private open groups.
+- Text and image messages, edit/delete, history with cursor pagination and unread
+  counts.
+- SSE transport with reconnect/refetch.
+- Lead-curated `project_members`; project rooms are member-only.
+- Non-project groups are auto-approved and stored in `chat_requests` for a later
+  admin review page.
 
-**Definition of done**
+**Remaining**
 
-- Messages are durable and paginated.
-- Only project members (all authenticated users, initially) can read a channel.
+- Admin review UI for group requests.
+- Task threads, mentions and notification integration.
+- Presence and typing indicators.
+- Moderation beyond soft delete, rate limits and retention.
+
+**Definition of done for the remaining work**
+
+- An admin can approve or reject a stored group request.
+- Mentions produce notifications without blocking the message transaction.
 - Reconnect resumes without gaps.
 - Chat load does not contend with the single SQLite writer for long.
 
@@ -95,7 +105,7 @@ Details: [plans/articles.md](plans/articles.md).
 
 ## Milestone 4 — AI assistance
 
-**Problem:** managers and builders spend time on summaries, estimates and
+**Problem:** leads and builders spend time on summaries, estimates and
 review checklists that a model can draft.
 
 **Scope (in order)**
@@ -121,7 +131,7 @@ These are small but should land alongside feature work.
 
 ### Security and operations
 
-- CORS allow-list driven by `RUDY_ALLOWED_ORIGINS`.
+- ~~CORS allow-list driven by `RUDY_CORS_ORIGINS`.~~ *Implemented; no origins are hardcoded.*
 - Per-IP and per-session rate limits on auth and write endpoints.
 - Security headers (`CSP`, `X-Content-Type-Options`, `Referrer-Policy`).
 - Structured request IDs and duration histograms.
@@ -133,7 +143,7 @@ These are small but should land alongside feature work.
 - Cursor pagination for tasks, ledger, leaderboard and notifications.
 - Consistent wrapped response shapes (some endpoints return bare objects today).
 - Soft-delete or archive for projects.
-- Audit log for manager actions (approve, reject, assign, complete).
+- Audit log for lead actions (approve, reject, assign, complete).
 - Export a user's ledger as CSV.
 
 ### Frontend
@@ -149,7 +159,7 @@ These are small but should land alongside feature work.
 
 - Team/workspace boundaries if Rudy is used by more than one group.
 - Saved filters and board views.
-- Bulk assignment for managers.
+- Bulk assignment for leads.
 - Task templates.
 - Time tracking alongside points.
 
@@ -166,6 +176,6 @@ These are small but should land alongside feature work.
 ## Not planned
 
 - Paying real money for points.
-- Letting managers edit balances directly.
+- Letting leads edit balances directly.
 - Bypassing review for "urgent" tasks by default.
 - Public anonymous access. Rudy is a team tool; every read is authenticated.

@@ -103,7 +103,7 @@ const COLUMNS: Array<{ key: string; title: string; caption: string; match: (task
   {
     key: 'proposals',
     title: 'Proposals',
-    caption: 'Waiting for the manager',
+    caption: 'Waiting for the lead',
     match: (task) => task.approvalState === 'proposed' || task.approvalState === 'changes_requested',
   },
   {

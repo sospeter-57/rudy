@@ -7,13 +7,13 @@ import type { Task, User } from './types'
  * Points are only ever created by the ledger. A user's balance is the sum of
  * their ledger entries, so there is a single source of truth and no drift.
  *
- * Awards happen exactly once, when a Project Manager marks a task completed:
+ * Awards happen exactly once, when a Lead marks a task completed:
  *
  *   - Assignee  -> task.points                       (reason: task_completed)
  *   - Reviewer  -> round(task.points * REVIEW_RATE)   (reason: review_bonus)
  *
  * A reviewer never earns a review bonus for a task they are assigned to, and
- * the manager earns nothing simply for pressing "complete" — that keeps the
+ * the lead earns nothing simply for pressing "complete" — that keeps the
  * economy free of self-dealing. Rejections, proposals and work-in-progress
  * never pay out.
  */
@@ -39,7 +39,7 @@ export interface AwardPlan {
   total: number
 }
 
-/** The exact payout a task will produce once a manager completes it. */
+/** The exact payout a task will produce once a lead completes it. */
 export function awardPlanFor(task: Task, users: User[]): AwardPlan {
   const byId = new Map(users.map((u) => [u.id, u]))
   const lines: AwardLine[] = []

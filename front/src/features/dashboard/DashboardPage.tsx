@@ -145,7 +145,7 @@ export function DashboardPage() {
               <div className="payout-list">
                 {derived.payouts.map((task) => {
                   const review = reviewProgress(task)
-                  const ready = canFinalize(task, { ...me, role: 'Project Manager' })
+                  const ready = canFinalize(task, { ...me, role: 'Lead' })
                   return (
                     <Link key={task.id} to={`/tasks/${task.id}`} className="payout-row">
                       <div className="payout-row__main">
@@ -224,7 +224,7 @@ export function DashboardPage() {
           <section className="panel panel--tight">
             <header className="panel__head">
               <div>
-                <span className="eyebrow">Manager desk</span>
+                <span className="eyebrow">Lead desk</span>
                 <h2 className="panel__title">Approvals</h2>
               </div>
               <ClipboardCheck size={18} className="panel__icon" />

@@ -17,6 +17,7 @@ import (
 
 	"rudy/internal/routes"
 	"rudy/internal/services"
+	"rudy/internal/storage"
 	"rudy/internal/transaction"
 )
 
@@ -76,12 +77,19 @@ func run(logger *slog.Logger) error {
 	users := services.NewUserService(db, sessionTTL())
 	users.SetGoogleClientID(os.Getenv("RUDY_GOOGLE_CLIENT_ID"))
 
+	attachments, err := storage.NewLocal(env("RUDY_UPLOAD_DIR", "uploads"))
+	if err != nil {
+		return err
+	}
+
 	handler := routes.NewRouter(routes.Deps{
 		Users:       users,
 		Projects:    services.NewProjectService(db),
 		Tasks:       services.NewTaskService(db),
 		Stats:       services.NewStatsService(db),
 		Preferences: services.NewPreferencesService(db),
+		Chat:        services.NewChatService(db, attachments, nil),
+		CORSOrigins: splitList(os.Getenv("RUDY_CORS_ORIGINS")),
 		Logger:      logger,
 	})
 
@@ -124,6 +132,19 @@ func env(key, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+// splitList parses a comma-separated environment value, dropping blanks so an
+// empty variable means "not configured".
+func splitList(raw string) []string {
+	parts := strings.Split(raw, ",")
+	values := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if part = strings.TrimSpace(part); part != "" {
+			values = append(values, part)
+		}
+	}
+	return values
 }
 
 // listenAddr builds the HTTP bind address from the environment. RUDY_ADDR is a

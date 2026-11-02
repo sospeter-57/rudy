@@ -6,6 +6,7 @@ import {
   LayoutDashboard,
   ListChecks,
   LogOut,
+  MessageSquare,
   Plus,
   Settings,
   ShieldCheck,
@@ -14,7 +15,7 @@ import {
 } from 'lucide-react'
 import { api } from '@/lib/api'
 import { cx } from '@/lib/cx'
-import { useMe, usePreferences } from '@/lib/hooks'
+import { useChatStream, useChatUnread, useMe, usePreferences } from '@/lib/hooks'
 import { tierFor, tierProgress } from '@/lib/points'
 import { useSession } from '@/lib/session'
 import { applyTheme, watchSystemTheme } from '@/lib/theme'
@@ -24,6 +25,7 @@ const NAV = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/projects', label: 'Projects', icon: FolderKanban },
   { to: '/tasks', label: 'Tasks', icon: ListChecks },
+  { to: '/chat', label: 'Chat', icon: MessageSquare },
   { to: '/review', label: 'Review', icon: ShieldCheck },
   { to: '/stats', label: 'Stats', icon: BarChart3 },
   { to: '/profile', label: 'Profile', icon: UserRound },
@@ -34,6 +36,7 @@ function useCrumbs(): string[] {
   const { pathname } = useLocation()
   if (pathname.startsWith('/projects/')) return ['Projects', 'Project']
   if (pathname.startsWith('/tasks/')) return ['Tasks', 'Task']
+  if (pathname.startsWith('/chat')) return ['Chat']
   if (pathname.startsWith('/projects')) return ['Projects']
   if (pathname.startsWith('/tasks')) return ['Tasks']
   if (pathname.startsWith('/review')) return ['Review']
@@ -59,6 +62,7 @@ export function SideRail() {
   const signOut = useSession((state) => state.signOut)
   const navigate = useNavigate()
   const { data: me } = useMe()
+  const { data: unread = 0 } = useChatUnread()
   const current = me ?? user
 
   const progress = useMemo(() => tierProgress(current?.points ?? 0), [current?.points])
@@ -81,6 +85,7 @@ export function SideRail() {
           >
             <Icon size={17} strokeWidth={1.6} />
             <span>{label}</span>
+            {to === '/chat' && unread > 0 ? <span className="rail__badge">{unread > 99 ? '99+' : unread}</span> : null}
           </NavLink>
         ))}
       </nav>
@@ -157,12 +162,14 @@ export function TopBar() {
 }
 
 export function MobileNav() {
+  const { data: unread = 0 } = useChatUnread()
   return (
     <nav className="mobile-nav" aria-label="Primary mobile">
       {NAV.map(({ to, label, icon: Icon }) => (
         <NavLink key={to} to={to} className={({ isActive }) => cx('mobile-nav__link', isActive && 'mobile-nav__link--active')}>
           <Icon size={18} strokeWidth={1.6} />
           <span>{label}</span>
+          {to === '/chat' && unread > 0 ? <span className="mobile-nav__badge">{unread > 9 ? '9+' : unread}</span> : null}
         </NavLink>
       ))}
     </nav>
@@ -182,6 +189,7 @@ function ThemeSync() {
 }
 
 export function AppShell() {
+  useChatStream()
   return (
     <div className="shell">
       <ThemeSync />

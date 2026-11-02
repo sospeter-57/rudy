@@ -52,21 +52,29 @@ because session expiry is compared lexicographically in SQLite. Use
 
 ## Database schema
 
-The schema is created by `back/internal/transaction/migrations/0001_init.sql`.
-Migrations are embedded in the binary, sorted by numeric filename prefix, and each
-runs in its own transaction. Applied versions are recorded in `schema_migrations`.
+The schema is created by embedded migrations (`0001_init.sql`,
+`0003_leads_and_project_members.sql`, `0004_chat.sql`). Migrations are embedded
+in the binary, sorted by numeric filename prefix, and each runs in its own
+transaction. Applied versions are recorded in `schema_migrations`.
 
 | Table | Purpose |
 | --- | --- |
 | `users` | Account, bcrypt password hash, role, cached point balance |
 | `sessions` | Opaque session id, SHA-256 token hash, expiry, revocation |
 | `projects` | Project metadata and creator |
+| `project_members` | Explicit membership curated by the project lead |
 | `tasks` | Task state, approval state, assignee, role, points, timestamps |
 | `task_acceptance` | One row per task: code, tests, documentation evidence |
 | `task_reviewers` | Reviewer list with decision, comment and decided time |
 | `task_dependencies` | Many-to-many task dependency edges |
 | `ledger_entries` | Append-only point awards; source of truth for balances |
 | `user_preferences` | Theme mode and palette per user |
+| `chat_rooms` | `dm`, `project` or `open` room metadata |
+| `chat_members` | Room membership and last-read pointer |
+| `chat_messages` | Plain-text messages with soft delete |
+| `chat_attachments` | Image metadata and storage keys |
+| `chat_requests` | Group requests, auto-approved today |
+| `chat_request_invites` | Invitees recorded with a group request |
 
 Indexes cover sessions by user and expiry, tasks by project/assignee/state/
 approval state, reviewers by user, and ledger by user and creation time.
@@ -91,15 +99,15 @@ Tokens are opaque: they carry no user data and cannot be forged by inspecting th
 client. A database leak does not expose usable tokens because only hashes are
 stored.
 
-Public routes are `GET /health`, `POST /register` and `POST /login`. Every other
-route requires a bearer token.
+Public routes are `GET /health`, `POST /register`, `POST /login` and
+`POST /auth/google`. Every other route requires a bearer token.
 
 ## Domain rules
 
 ### Roles
 
 Any registered user can propose tasks. Only a user whose role is exactly
-`Project Manager` can create projects, approve/reject proposals, assign tasks, or
+`Lead` can create projects, approve/reject proposals, assign tasks, or
 complete tasks.
 
 ### Task lifecycle
@@ -107,11 +115,11 @@ complete tasks.
 ```
 proposed ──approve──▶ approved ──assign + gates + reviewers──▶ auditing
    ▲                    │                                        │
-   │                    └──────────── complete (manager) ────────┤
+   │                    └──────────── complete (lead) ────────┤
    │                                                             │
    └──── changes_requested ◀── reject / request changes ◀────────┘
 
-auditing ──all reviewers approved + manager completes──▶ completed
+auditing ──all reviewers approved + lead completes──▶ completed
 ```
 
 State fields:
@@ -123,7 +131,7 @@ State fields:
 
 Acceptance gates and reviewers may only be edited when:
 
-- the actor is the assignee or a Project Manager, **and**
+- the actor is the assignee or a Lead, **and**
 - `approval_state === 'approved'`, **and**
 - `task_state === 'pending'`.
 
@@ -156,10 +164,31 @@ Completion is a single database transaction:
 6. Recompute affected users' cached balances as `SUM(ledger_entries.points)`.
 
 The unique ledger index and the completed-state check make payout idempotent.
-Managers earn nothing for approvals or completion.
+Leads earn nothing for approvals or completion.
 
 Review bonus: `max(2, round(task.points × 0.15))`, implemented as
 `models.ReviewBonus`.
+
+### Chat and project membership
+
+- Creating a project inserts a `project_members` row for the creator with role
+  `lead`. Adding project members is lead-only; removing one also removes them
+  from the project's chat rooms in the same transaction.
+- Global `Lead` (project creation and task approval) is separate from the
+  per-project lead, which is always `projects.creator_id`.
+- Project chat rooms are created and archived by the project lead. Only selected
+  `project_members` are added, and only current room members can read messages
+  or attachments.
+- DMs are keyed by the sorted pair of user IDs; a partial unique index guarantees
+  one room per pair. Open groups are member-owned and may be discoverable.
+- Open group creation is auto-approved in v1. The room is active immediately and
+  a `chat_requests` row with `status = 'approved'` plus its invites is stored for
+  a future admin review page.
+- Attachments are stored through `storage.AttachmentStore`; the local
+  implementation writes under `RUDY_UPLOAD_DIR`. Attachment rows are room-scoped
+  and can only be attached to a message by their uploader, once.
+- Chat events are published after commit through an in-process hub and delivered
+  over SSE. The hub assumes a single API instance.
 
 ## Error mapping
 
@@ -179,7 +208,7 @@ content type returns 415.
 
 ## Stats
 
-`GET /stats?range=30d|90d|all` aggregates:
+`GET /stats?range=7d|30d|90d|all` aggregates:
 
 - account, builder, project and task totals;
 - completion rate and average cycle time;
@@ -198,10 +227,13 @@ All aggregation happens in SQL. The frontend only shapes the arrays for Recharts
 - The HTTP listener binds to `RUDY_HOST`:`RUDY_PORT` (default `0.0.0.0:8080`).
   `RUDY_PORT` falls back to the platform `PORT`, and `RUDY_ADDR` overrides both
   when a single address or bare port is more convenient.
+- Chat images live under `RUDY_UPLOAD_DIR` (default `uploads`); mount a
+  persistent volume for it in production.
 - SQLite runs with `foreign_keys=1`, `busy_timeout=5000` and `journal_mode=WAL`.
 - The pool is limited to one connection to keep writes predictable; do not hold
   result sets open while starting a transaction (the migration runner closes its
   `schema_migrations` rows before applying migrations for this reason).
 - There is no background worker. Session cleanup happens inline during auth writes.
-- CORS is not enabled because development uses the Vite proxy. Add an explicit
-  allow-list middleware before deploying the client and API on different origins.
+- CORS is an explicit allow-list from `RUDY_CORS_ORIGINS`; no origin is
+  hardcoded. Development uses the Vite proxy, so the variable can stay empty
+  there. Set it when the client and API are served from different origins.

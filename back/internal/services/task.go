@@ -245,10 +245,10 @@ func (s *TaskService) Submit(ctx context.Context, taskID int64, actor models.Use
 		return models.Task{}, err
 	}
 	if !canWorkOn(task, actor) {
-		return models.Task{}, models.Forbidden("only the assignee or a Project Manager can change this task")
+		return models.Task{}, models.Forbidden("only the assignee or a Lead can change this task")
 	}
 	if task.ApprovalState != models.Approved {
-		return models.Task{}, models.Conflict("a manager must approve this task first")
+		return models.Task{}, models.Conflict("a lead must approve this task first")
 	}
 	if task.TaskState != models.Pending {
 		return models.Task{}, models.Conflict("this task is not pending")
@@ -408,25 +408,25 @@ func (s *TaskService) Ledger(ctx context.Context, userID int64) ([]models.Ledger
 }
 
 func requireManager(actor models.User) error {
-	if actor.Role != models.ProjectManager {
-		return models.Forbidden("only a Project Manager can do that")
+	if actor.Role != models.Lead {
+		return models.Forbidden("only a Lead can do that")
 	}
 	return nil
 }
 
 func canWorkOn(task models.Task, actor models.User) bool {
-	return actor.Role == models.ProjectManager || (task.AssigneeID != nil && *task.AssigneeID == actor.ID)
+	return actor.Role == models.Lead || (task.AssigneeID != nil && *task.AssigneeID == actor.ID)
 }
 
 // requirePreparation enforces the approval-first rule. Acceptance evidence and
-// reviewers may only change after a manager approves the task and before it is
+// reviewers may only change after a lead approves the task and before it is
 // submitted for review.
 func requirePreparation(task models.Task, actor models.User) error {
 	if !canWorkOn(task, actor) {
-		return models.Forbidden("only the assignee or a Project Manager can change this task")
+		return models.Forbidden("only the assignee or a Lead can change this task")
 	}
 	if task.ApprovalState != models.Approved {
-		return models.Conflict("a manager must approve this task before work can begin")
+		return models.Conflict("a lead must approve this task before work can begin")
 	}
 	if task.TaskState != models.Pending {
 		return models.Conflict("acceptance criteria are locked while the task is in review")

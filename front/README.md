@@ -13,7 +13,9 @@ npm install
 npm run dev        # http://127.0.0.1:5173
 ```
 
-The Vite dev server proxies `/api` to `http://localhost:8080` (see `vite.config.ts`).
+The Vite dev server proxies `/api` to `VITE_PROXY_TARGET` in `front/.env`
+(for example `http://localhost:8080`); the API origin is never hardcoded in
+`vite.config.ts`.
 
 ```bash
 npm run typecheck  # tsc only
@@ -25,6 +27,8 @@ npm run preview    # serve the build
 
 ```bash
 VITE_API_BASE=/api
+VITE_DEV_PORT=5173
+VITE_PROXY_TARGET=http://localhost:8080
 VITE_GOOGLE_CLIENT_ID=1234567890-abc.apps.googleusercontent.com   # optional
 ```
 

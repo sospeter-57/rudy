@@ -5,8 +5,10 @@
 <h1 align="center">Rudy</h1>
 
 Rudy is a project and task command deck where completed work earns points. A
-Project Manager approves proposals, builders record acceptance evidence, reviewers
+Lead approves proposals, builders record acceptance evidence, reviewers
 sign off, and the ledger mints points exactly once when a task is completed.
+Teams can also talk in direct messages, lead-curated project rooms and open
+groups, with text, images and live updates.
 
 The repository contains:
 
@@ -22,13 +24,13 @@ cd back
 cp .env.example .env   # optional: review config before first start
 go run .
 
-# terminal 2 — client on :5173 (proxies /api to :8080)
+# terminal 2 — client on :5173 (proxies /api to the origin in VITE_PROXY_TARGET)
 cd front
 npm install
 npm run dev
 ```
 
-Create an account on the landing page. Choose **Project Manager** to open a project,
+Create an account on the landing page. Choose **Lead** to open a project,
 or any builder role to propose work. See [docs/getting-started.md](docs/getting-started.md)
 for configuration and testing.
 

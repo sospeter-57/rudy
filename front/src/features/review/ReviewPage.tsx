@@ -32,7 +32,7 @@ export function ReviewPage() {
       <PageHeader
         eyebrow="Sign-off desk"
         title={<>Reviews <em>waiting</em> on you.</>}
-        description="Read the gates, then approve or ask for changes. Your sign-off unlocks the manager's final payout."
+        description="Read the gates, then approve or ask for changes. Your sign-off unlocks the lead's final payout."
         meta={
           <>
             <Badge tone={pending.length > 0 ? 'red' : 'gold'}><ShieldCheck size={11} /> {pending.length} pending</Badge>

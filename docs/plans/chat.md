@@ -1,199 +1,152 @@
 # Feature plan — Chat
 
+**Status: implemented in v1.** This document records the shipped design so later
+work (admin review, mentions, task threads) can extend it without re-deciding the
+core model.
+
 ## Goal
 
-Give teams a place to talk where the work lives. Chat should sit beside the board:
-a project channel for general coordination, and a thread on every task for
-decisions, links and review context. Discussion should stop leaking into external
-tools and disappearing.
+Give teams a place to talk where the work lives: private 1:1 messages, project
+rooms curated by the project lead, and open groups anyone can discover and join.
+Chat access is separate from project/task visibility: every signed-in user can
+still read projects and tasks, but project rooms are member-only.
 
 ## Scope
 
 ### In scope (v1)
 
-- One channel per project, created lazily.
-- Task threads.
-- Text messages with links and basic Markdown (bold, italic, code, lists).
-- Edit and delete your own message.
-- Mentions (`@username`) that create notifications.
-- Message history with cursor pagination.
-- Unread counts per channel/thread.
-- A simple presence indicator ("3 online in this project").
+- Direct messages between two users, including images.
+- Project rooms created and archived by the project lead.
+- Explicit `project_members` curated by the lead; project rooms can only include
+  project members.
+- Open groups with discoverable or private visibility.
+- Non-project group creation is **auto-approved for now**; the request, review
+  status and invites are persisted in `chat_requests` for a future admin queue.
+- Text messages (up to 4000 characters) and up to four images per message.
+- Edit/delete your own message; room managers may delete any message.
+- Cursor pagination, unread counts, read state, and live updates.
+- Image uploads on local disk behind a storage interface.
 
 ### Out of scope (v1)
 
-- Direct messages between users.
-- File uploads and image attachments.
-- Voice/video.
-- Cross-workspace federation.
-- End-to-end encryption.
+- An admin review UI, admin usernames, or manual approval of open groups.
+- Task threads, mentions/notifications, presence and typing indicators.
+- Markdown rendering (messages are plain text).
+- Voice/video, federation, end-to-end encryption.
+
+## Roles
+
+- **Lead** is the renamed global project-manager role. It can create projects.
+- The **project lead** is `projects.creator_id`, not a global role. The lead is
+  recorded as the `lead` row in `project_members` and is always included in a
+  project room.
 
 ## Transport
 
-Use **Server-Sent Events (SSE)** for server → client and normal `POST` requests
-for client → server.
-
-Why not WebSockets first: SSE is plain HTTP, works with the existing `net/http`
-router and bearer middleware, reconnects natively, and needs no new dependency.
-It is one-way, which is all a chat feed needs; sending is a regular authenticated
-POST. If typing indicators or presence need lower latency later, upgrade to
-WebSockets behind the same message service.
+Server-Sent Events (SSE) for server → client, normal authenticated `POST`
+requests for client → server. Native `EventSource` cannot send an `Authorization`
+header, so the client reads the stream from a `fetch` body and parses SSE frames.
 
 Flow:
 
-1. Client opens `GET /events` with `Authorization: Bearer …` and `Last-Event-ID`.
-2. Server subscribes the connection to channels the user can see.
-3. New messages are appended to the database, then published to an in-process hub.
-4. Hub fans out as SSE frames `id`, `event`, `data`.
-5. On reconnect, the client replays from `Last-Event-ID`; the server backfills
-   from the database.
+1. Client opens `GET /chat/events` with `Authorization: Bearer …`.
+2. The in-process hub subscribes the user to their rooms.
+3. A message is committed, then published to the hub.
+4. The client refetches the affected queries when an event arrives.
+5. On reconnect the client refetches, closing any gap from missed events.
 
-Because the hub is in-process, v1 assumes a single API instance. Document this.
-For multiple instances, add a Postgres `LISTEN/NOTIFY` or Redis pub/sub bridge.
+The hub is in-process, so v1 assumes one API instance. Add Redis or Postgres
+`LISTEN/NOTIFY` before scaling horizontally.
 
 ## Data model
 
-Migration `0003_chat.sql`:
+Migrations: `0003_leads_and_project_members.sql` and `0004_chat.sql`.
 
-```sql
-CREATE TABLE chat_channels (
-  id          INTEGER PRIMARY KEY AUTOINCREMENT,
-  kind        TEXT NOT NULL,              -- project | task
-  project_id  INTEGER REFERENCES projects(id) ON DELETE CASCADE,
-  task_id     INTEGER REFERENCES tasks(id) ON DELETE CASCADE,
-  name        TEXT NOT NULL DEFAULT '',
-  created_at  TEXT NOT NULL,
-  UNIQUE(project_id, kind),
-  UNIQUE(task_id, kind)
-);
+- `project_members(project_id, user_id, role, added_by, joined_at)` — explicit
+  membership; project creation backfills the creator as `lead`.
+- `chat_rooms(kind, name, purpose, project_id, created_by, dm_key, visibility,
+  status, created_at, archived_at)` with `kind IN ('dm','project','open')`.
+  A partial unique index on `dm_key` prevents duplicate DMs; another prevents
+  duplicate active room names within a project.
+- `chat_members(room_id, user_id, role, joined_at, last_read_message_id)` — room
+  membership and read state.
+- `chat_messages(room_id, sender_id, body, created_at, edited_at, deleted_at)` —
+  soft delete keeps rows for moderation.
+- `chat_attachments(room_id, uploader_id, message_id, storage_key, filename,
+  mime, size_bytes, width, height, created_at)` — one row per image.
+- `chat_requests(requester_id, name, purpose, visibility, status, reviewed_by,
+  review_note, room_id, created_at, reviewed_at)` — auto-approved today.
+- `chat_request_invites(request_id, user_id)` — who was invited when the group
+  was requested.
 
-CREATE TABLE chat_messages (
-  id          INTEGER PRIMARY KEY AUTOINCREMENT,
-  channel_id  INTEGER NOT NULL REFERENCES chat_channels(id) ON DELETE CASCADE,
-  author_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  body        TEXT NOT NULL,
-  edited_at   TEXT,
-  deleted_at  TEXT,
-  created_at  TEXT NOT NULL
-);
+## Authorization rules
 
-CREATE INDEX chat_messages_channel
-  ON chat_messages(channel_id, id DESC);
-
-CREATE TABLE chat_reads (
-  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  channel_id  INTEGER NOT NULL REFERENCES chat_channels(id) ON DELETE CASCADE,
-  last_read_id INTEGER NOT NULL DEFAULT 0,
-  updated_at  TEXT NOT NULL,
-  PRIMARY KEY(user_id, channel_id)
-);
-
-CREATE TABLE chat_mentions (
-  message_id  INTEGER NOT NULL REFERENCES chat_messages(id) ON DELETE CASCADE,
-  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  created_at  TEXT NOT NULL,
-  PRIMARY KEY(message_id, user_id)
-);
-```
-
-All authenticated users can currently see all projects, so channel membership is
-implicit. If workspaces are added later, add a `channel_members` table rather than
-changing message authorization in handlers.
+- DMs and open rooms: room members only.
+- Project rooms: the project lead creates/archives; only selected project
+  members can read or post. Removing someone from the project removes them from
+  its rooms.
+- Open groups: discoverable rooms can be joined by anyone; private rooms are
+  invite-only.
+- Attachments are readable only by current members of the attachment's room and
+  can only be attached to a message by the uploader, once, in the same room.
+- Project and task listings stay open to all authenticated users; membership
+  only gates chat.
 
 ## API
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| GET | `/projects/{id}/channel` | Get or lazily create the project channel |
-| GET | `/tasks/{id}/thread` | Get or lazily create the task thread |
-| GET | `/channels/{id}/messages?before=&limit=` | Paginated history, newest first |
-| POST | `/channels/{id}/messages` | Body `{ "body": "…", "clientId": "uuid" }` |
-| PATCH | `/messages/{id}` | Edit your own message |
-| DELETE | `/messages/{id}` | Soft-delete your own message; managers may delete any |
-| POST | `/channels/{id}/read` | Body `{ "lastMessageId": 42 }` |
-| GET | `/channels/unread` | Unread counts for the current user |
-| GET | `/events` | SSE stream |
-| GET | `/channels/{id}/presence` | Online users (optional, in-memory) |
+| GET | `/chats` | Rooms the current user belongs to |
+| GET | `/chat/{id}` | One room (members only) |
+| GET | `/chat/unread` | Total unread messages |
+| GET | `/chat/discover` | Discoverable open groups |
+| GET | `/chat/requests` | The current user's group requests |
+| POST | `/chat` | Create an auto-approved open group |
+| POST | `/chat/dm` | Open or reuse a 1:1 room |
+| PUT | `/chat/{id}` | Update name, purpose and visibility |
+| DELETE | `/chat/{id}` | Archive a project/open room |
+| POST | `/chat/{id}/join` | Join a discoverable open group |
+| POST | `/chat/{id}/leave` | Leave a room |
+| POST/DELETE | `/chat/{id}/members[/{userId}]` | Manager-only membership |
+| GET/POST | `/chat/{id}/messages` | History (`before`, `limit`) and send |
+| PATCH/DELETE | `/chat/message/{id}` | Edit or soft-delete a message |
+| POST | `/chat/{id}/read` | Mark up to a message as read |
+| POST | `/chat/{id}/attachments` | Multipart image upload |
+| GET | `/attachments/{id}` | Authenticated image bytes |
+| GET | `/chat/events` | SSE stream |
+| GET/POST | `/project/{id}/members` | List/add project members (lead only for add) |
+| DELETE | `/project/{id}/members/{userId}` | Remove a project member |
+| GET/POST | `/project/{id}/chats` | List/create project rooms |
 
-Message shape:
+## Backend notes
 
-```json
-{
-  "id": 42,
-  "channelId": 3,
-  "author": { "id": 7, "username": "ari", "role": "Frontend Engineer" },
-  "body": "Pushed the fix, ready for review.",
-  "mentions": [4],
-  "editedAt": null,
-  "deletedAt": null,
-  "createdAt": "2026-11-02T08:15:43Z"
-}
-```
+- `ChatService` owns permissions, room lifecycle, messages, uploads and events.
+- `transaction/chat_repo.go` holds all chat and project-member SQL. Queries use
+  keyset pagination and never hold rows open across a transaction.
+- `storage.AttachmentStore` abstracts image bytes; `storage.Local` writes under
+  `RUDY_UPLOAD_DIR`, which must be a persistent volume in production.
+- `POST /chat/{id}/attachments` is the only multipart endpoint; everything else
+  remains JSON.
+- Image MIME types and sizes are validated before writing; storage keys are
+  generated, never accepted from the client.
+- SSE clears the server write deadline per connection. The stream is read-only.
 
-Validation:
+## Frontend notes
 
-- body 1–4000 characters after trimming;
-- reject empty or whitespace-only messages;
-- `clientId` is idempotency for retries (unique per author);
-- mentions must resolve to real usernames;
-- edits keep an `editedAt` marker but no full revision history in v1.
+- `/chat` and `/chat/:roomId` render the room list, conversation, composer and
+  dialogs for DMs, discovery and group creation.
+- Authenticated images are fetched with the bearer token and rendered as blob
+  URLs, then revoked on unmount.
+- `useChatStream` runs once in `AppShell` and invalidates `chats`, `chat-unread`,
+  `chat-requests` and the affected room/message queries.
+- The nav rail and mobile nav show an unread badge; it polls as a fallback.
+- `ProjectDetailPage` exposes lead-only member curation and project-room
+  creation, and shows members-only state to everyone else.
 
-## Backend work
+## Deferred work
 
-1. `ChatService` with channel resolution, message CRUD, read state, mention
-   parsing.
-2. Repository methods with keyset pagination (`WHERE id < ? ORDER BY id DESC`).
-3. A `Hub` with per-channel subscriber sets, a mutex, and buffered send channels.
-   Drop slow consumers rather than blocking the writer.
-4. SSE handler:
-   - flush headers immediately;
-   - send a heartbeat comment every 20–30 seconds;
-   - honour `Last-Event-ID` by replaying missed rows;
-   - stop on request context cancellation.
-5. Publish after commit, same rule as notifications.
-6. Strip/escape content on render. Store Markdown source, render on the client.
-7. Rate-limit sending: for example 30 messages/minute/user.
-8. Emit `chat.mention` notifications through the notification service.
-
-## Frontend work
-
-- A **Chat** entry in the project page (tab or side panel) and a **Discussion**
-  tab on task detail.
-- `useChannel`, `useMessages` (infinite query), `useSendMessage`, `useReadState`.
-- An `EventSource` managed in one module; reconnect with exponential backoff; on
-  reconnect send `Last-Event-ID`.
-- Optimistic send with a temporary id, reconciled on response; failed messages
-  stay visible with a retry affordance.
-- Compose box with Enter to send, Shift+Enter for newline, `@` autocomplete from
-  `GET /users`.
-- Day separators, author grouping, edit/delete menus.
-- Unread badge on the project card and the nav item.
-- Keep the message list virtualised or capped if a channel grows large.
-
-## Rollout
-
-1. Schema, service, repository, plain REST history and send. No realtime.
-2. SSE hub + live updates for a single instance.
-3. Mentions and notification integration.
-4. Read state and unread badges.
-5. Edit/delete and moderation.
-6. Presence and typing indicators only if users ask.
-
-## Risks
-
-| Risk | Mitigation |
-| --- | --- |
-| SQLite write contention with chat volume | Small inserts, WAL, single writer, rate limits; revisit Postgres if needed |
-| Lost events on reconnect | SSE `Last-Event-ID` + database backfill |
-| Memory growth from dead connections | Heartbeats, write deadlines, context cancellation, subscriber cap |
-| XSS via Markdown | Render with a strict allow-list, sanitise HTML, never `dangerouslySetInnerHTML` raw |
-| Spam and abuse | Rate limits, delete controls, report flow later |
-| Multi-instance deployment | Document single-instance hub; add pub/sub before scaling out |
-| Privacy of old messages | Define retention; soft-delete keeps rows, add a purge job later |
-
-## Success measures
-
-- Messages per active project per week.
-- Share of review decisions preceded by task-thread discussion.
-- Median time to answer a mention.
-- Reduction in external chat links in task descriptions.
+- Admin review queue for `chat_requests` (rows and statuses already exist).
+- Task threads, mentions, notifications, presence and typing indicators.
+- Moderation tools beyond soft delete.
+- Rate limiting and retention/purge jobs.
+- Multi-instance SSE fan-out.

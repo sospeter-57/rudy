@@ -130,7 +130,7 @@ Validation:
 - body 1–50,000 characters;
 - at most 5 tags, each 1–24 characters, lowercase, `[a-z0-9-]`;
 - cover URL must be `https://` or empty;
-- only the author may edit or delete (managers may archive abusive posts).
+- only the author may edit or delete (leads may archive abusive posts).
 
 ## Markdown and safety
 
@@ -188,7 +188,7 @@ Validation:
 | Spam or low-quality posts | Rate limits, report/archive controls, team-only visibility |
 | Draft privacy | Every query scopes by author unless published |
 | Large bodies | 50k character cap, pagination, lazy syntax highlighting |
-| Comment toxicity | Soft-delete, manager archive, report flow later |
+| Comment toxicity | Soft-delete, lead archive, report flow later |
 | Notification noise | Batch reactions, notify comments and publishes only |
 | Scope creep into a CMS | Keep v1 to Markdown posts with tags and comments |
 

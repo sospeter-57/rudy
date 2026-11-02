@@ -17,9 +17,9 @@ point for developers, operators and users.
 
 ## Product in one paragraph
 
-Anyone can propose a task inside a project. A Project Manager approves it as fit
+Anyone can propose a task inside a project. A Lead approves it as fit
 to be worked on, assigns a builder, and the builder records code, tests and
-documentation evidence. Reviewers approve or request changes. When a manager marks
+documentation evidence. Reviewers approve or request changes. When a lead marks
 the task complete, the ledger mints the task value to the assignee and a review
 bonus to every approving reviewer. A user's balance is always the sum of their
 ledger entries.
@@ -45,10 +45,13 @@ rudy/
 Implemented end to end:
 
 - Registration, login, logout and opaque bearer-token sessions.
-- Project creation (Project Manager only) and project listing/detail.
+- Project creation (Lead only) and project listing/detail.
+- Project members curated by the lead and lead-only project chat rooms.
 - Task proposals, approval-first gates, assignment, review, completion.
 - Ledger-backed point balances with idempotent payout.
 - Leaderboard and per-user ledger.
-- `/stats` aggregations and a Recharts statistics page.
+- `/stats` aggregations (7d/30d/90d/all) and a Recharts statistics page.
+- Direct messages, open/discoverable groups and private chat with text and images.
+- Live chat updates over SSE with unread counts and authenticated image delivery.
 - Account-level theme and palette preferences applied through CSS custom properties.
 - End-to-end backend tests for migrations, sessions, gates, self-review, payout, stats and preferences.

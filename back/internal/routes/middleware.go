@@ -21,6 +21,69 @@ type contextKey string
 
 const authContextKey contextKey = "rudy.auth"
 
+// corsPolicy holds the cross-origin origins allowed by configuration. An empty
+// policy leaves the API same-origin only, which is the default for the Vite
+// proxy setup.
+type corsPolicy struct {
+	origins  map[string]struct{}
+	allowAny bool
+}
+
+func newCORSPolicy(origins []string) *corsPolicy {
+	policy := &corsPolicy{origins: make(map[string]struct{}, len(origins))}
+	for _, origin := range origins {
+		origin = strings.TrimSpace(strings.TrimSuffix(origin, "/"))
+		if origin == "" {
+			continue
+		}
+		if origin == "*" {
+			policy.allowAny = true
+			continue
+		}
+		policy.origins[origin] = struct{}{}
+	}
+	return policy
+}
+
+func (p *corsPolicy) allowed(origin string) (string, bool) {
+	if origin == "" {
+		return "", false
+	}
+	if p.allowAny {
+		return "*", true
+	}
+	if _, ok := p.origins[origin]; ok {
+		return origin, true
+	}
+	return "", false
+}
+
+// cors answers browser preflights and adds the CORS response headers for the
+// origins listed in RUDY_CORS_ORIGINS. Origins are never hardcoded: when the
+// variable is unset the API stays same-origin only.
+func (s *server) withCORS(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		allowedOrigin, ok := s.cors.allowed(strings.TrimSpace(r.Header.Get("Origin")))
+		if !ok {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		w.Header().Add("Vary", "Origin")
+		w.Header().Set("Access-Control-Allow-Origin", allowedOrigin)
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, Accept")
+		w.Header().Set("Access-Control-Max-Age", "600")
+
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
 // authenticate resolves the bearer token to a user and rejects the request when
 // it is missing, expired or revoked.
 func (s *server) authenticate(next http.Handler) http.Handler {
@@ -97,6 +160,15 @@ func recoverPanic(logger *slog.Logger, next http.Handler) http.Handler {
 	})
 }
 
+// isUploadPath reports whether a POST is the chat image upload endpoint.
+func isUploadPath(path string) bool {
+	if !strings.HasSuffix(path, "/attachments") {
+		return false
+	}
+	segments := strings.Split(strings.Trim(path, "/"), "/")
+	return len(segments) == 3 && segments[0] == "chat"
+}
+
 // logRequests logs one line per request with method, path, status and latency.
 func logRequests(logger *slog.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -149,7 +221,16 @@ func requireJSON(next http.Handler) http.Handler {
 				break
 			}
 			mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
-			if err != nil || mediaType != "application/json" {
+			if err != nil {
+				writeError(w, http.StatusUnsupportedMediaType, "Content-Type must be application/json")
+				return
+			}
+			// Chat image uploads are the one multipart endpoint. Keep the JSON
+			// rule everywhere else so every other request stays predictable.
+			if mediaType == "multipart/form-data" && isUploadPath(r.URL.Path) {
+				break
+			}
+			if mediaType != "application/json" {
 				writeError(w, http.StatusUnsupportedMediaType, "Content-Type must be application/json")
 				return
 			}

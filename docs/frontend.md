@@ -17,6 +17,8 @@ npm run preview    # serve dist/
 
 Configuration lives in `src/lib/config.ts` and comes from `VITE_*` variables
 (see `.env.example`). `VITE_API_BASE` defaults to `/api`.
+`VITE_PROXY_TARGET` (in `front/.env`) sets the Go API origin that the Vite dev
+server proxies `/api` to; `VITE_DEV_PORT` sets the dev port.
 
 ## Routes
 
@@ -24,10 +26,12 @@ Configuration lives in `src/lib/config.ts` and comes from `VITE_*` variables
 | --- | --- | --- |
 | `/` | `auth/LandingPage` | Public. Login and registration. Redirects signed-in users to `/dashboard`. |
 | `/dashboard` | `dashboard/DashboardPage` | Personal deck: my tasks, approvals waiting, review queue, points at stake. |
-| `/projects` | `projects/ProjectsPage` | Project grid and create-project dialog (managers only). |
-| `/projects/:id` | `projects/ProjectDetailPage` | One project's board, tasks and people. |
+| `/projects` | `projects/ProjectsPage` | Project grid and create-project dialog (leads only). |
+| `/projects/:id` | `projects/ProjectDetailPage` | One project's board, tasks, members and project rooms. |
 | `/tasks` | `tasks/TasksPage` | Cross-project task list with filters and the proposal dialog. |
 | `/tasks/:id` | `tasks/TaskDetailPage` | Gates, reviewers, approvals, submission and completion. |
+| `/chat` | `features/chat/ChatPage` | Room list, DMs, discovery and group creation. |
+| `/chat/:roomId` | `features/chat/ChatPage` | One conversation with text and image messages. |
 | `/review` | `review/ReviewPage` | Tasks where the current user is a reviewer. |
 | `/stats` | `stats/StatsPage` | Recharts dashboards from `GET /stats`. |
 | `/profile` | `profile/ProfilePage` | `Builder <username>`, balance, tier, ledger, leaderboard. |
@@ -69,7 +73,17 @@ tasks or projects.
 | `useLedger(userId)` | `['ledger', userId]` | `GET /user/{id}/ledger` |
 | `useLeaderboard()` | `['leaderboard']` | `GET /leaderboard` |
 | `usePreferences()` | `['preferences']` | `GET /me/preferences` |
-| `useStats(range)` | `['stats', range]` | `GET /stats?range=…` |
+| `useStats(range)` | `['stats', range]` | `GET /stats?range=7d\|30d\|90d\|all` |
+| `useChats()` / `useChat(id)` | `['chats']`, `['chat', id]` | Your rooms / one room |
+| `useChatMessages(id)` | `['chat-messages', id]` | `GET /chat/{id}/messages` |
+| `useChatUnread()` | `['chat-unread']` | `GET /chat/unread`, polls every 30s |
+| `useChatRequests()` | `['chat-requests']` | `GET /chat/requests` |
+| `useProjectMembers(id)` | `['project-members', id]` | `GET /project/{id}/members` |
+| `useProjectChats(id)` | `['project-chats', id]` | `GET /project/{id}/chats` |
+| `useChatStream()` | n/a | Authenticated SSE; invalidates chat queries |
+
+`useChatStream` runs once in `AppShell`. It reconnects after a dropped stream and
+refetches on reconnect, so a client that missed events still converges.
 
 Mutations call `api.*` directly and then invalidate the relevant keys. Keep this
 pattern: the API is the source of truth, and optimistic data is never invented
@@ -80,10 +94,12 @@ in the client.
 `api` implements the `ApiClient` interface. It:
 
 - prefixes `config.apiBase`;
-- sets `Content-Type: application/json` only when there is a body;
+- sets `Content-Type: application/json` only for non-`FormData` bodies;
 - attaches the bearer token when present;
 - parses JSON and throws `ApiError(status, message)` for non-2xx responses;
-- triggers the global sign-out on `401`.
+- triggers the global sign-out on `401`;
+- fetches chat images as authenticated blobs and reads the SSE stream from a
+  `fetch` body (native `EventSource` cannot send the bearer header).
 
 All return types are in `src/lib/types.ts`. When adding an endpoint, update
 `ApiClient`, the `api` object, the types, and the query hook together.
@@ -94,15 +110,15 @@ The UI mirrors backend rules. Do not hand-roll permission checks in components.
 
 | Helper | Meaning |
 | --- | --- |
-| `isManager` | Role is exactly `Project Manager` |
-| `canCreateProject`, `canApprove`, `canComplete` | Manager-only actions |
+| `isLead` | Role is exactly `Lead` |
+| `canCreateProject`, `canApprove`, `canComplete` | Lead-only actions |
 | `isAssignee` | Current user owns the task |
-| `canWorkOn` | Assignee or manager |
+| `canWorkOn` | Assignee or lead |
 | `canEditAcceptance` | `canWorkOn` **and** task approved **and** pending |
 | `canAddReviewer` | Same as `canEditAcceptance` |
 | `canSubmitForReview` | Approved + pending + all gates + at least one reviewer |
 | `canReview` | Current user is a listed reviewer |
-| `canFinalize` | Manager + approved + pending/auditing + gates + all reviewers approved |
+| `canFinalize` | Lead + approved + pending/auditing + gates + all reviewers approved |
 | `gatesComplete` | Code, tests and documentation all non-empty |
 | `reviewProgress` | Decided / total reviewers for the progress meter |
 

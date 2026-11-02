@@ -74,7 +74,7 @@ export function LandingPage() {
             Build Responsibly Purposefully
           </p>
           <p className="auth__copy">
-            Propose the work. A manager approves what is fit to build. Ship it, get reviewed,
+            Propose the work. A lead approves what is fit to build. Ship it, get reviewed,
             and watch your profile grow. Every completed task mints points — for the maker and
             the reviewers who signed off.
           </p>
@@ -91,7 +91,7 @@ export function LandingPage() {
               <span>02</span>
               <div>
                 <strong>Approve</strong>
-                <p>A manager decides if it is fit to be worked on.</p>
+                <p>A lead decides if it is fit to be worked on.</p>
               </div>
             </div>
             <div className="auth__flow-step">

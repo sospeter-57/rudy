@@ -1,7 +1,10 @@
 # API reference
 
 Base URL in development: `http://localhost:8080`. The Vite dev server proxies
-`/api/*` to that origin, so the client normally calls `/api/<path>`.
+`/api/*` to that origin (configured by `VITE_PROXY_TARGET`), so the client
+normally calls `/api/<path>`. When a browser calls the API from a different
+origin, the server allows exactly the origins listed in `RUDY_CORS_ORIGINS`; no
+origin is hardcoded.
 
 All request and response bodies are JSON. Timestamps are RFC3339 UTC strings
 (for example `2026-11-02T08:15:43Z`). Field names are `camelCase` except the two
@@ -35,7 +38,7 @@ Public routes are `GET /health`, `POST /register`, `POST /login` and
     "id": 1,
     "username": "nova",
     "email": "nova@example.com",
-    "role": "Project Manager",
+    "role": "Lead",
     "points": 0,
     "createdAt": "2026-11-02T08:15:43Z"
   },
@@ -76,7 +79,7 @@ need a `Content-Type` header. Requests with a body must send
 Valid roles:
 
 ```
-Project Manager, Database Engineer, Frontend Engineer, Backend Engineer,
+Lead, Database Engineer, Frontend Engineer, Backend Engineer,
 Fullstack Engineer, QA Engineer, Software Engineer, Data Scientist, UIUX Designer
 ```
 
@@ -158,7 +161,7 @@ Auth required. Returns the current `User` object directly (not wrapped):
 {
   "id": 1,
   "username": "nova",
-  "role": "Project Manager",
+  "role": "Lead",
   "points": 42,
   "createdAt": "2026-11-02T08:15:43Z"
 }
@@ -169,7 +172,7 @@ Auth required. Returns the current `User` object directly (not wrapped):
 Auth required. Returns every account, used for assignee and reviewer pickers.
 
 ```json
-{ "users": [ { "id": 1, "username": "nova", "role": "Project Manager", "points": 42, "createdAt": "…" } ] }
+{ "users": [ { "id": 1, "username": "nova", "role": "Lead", "points": 42, "createdAt": "…" } ] }
 ```
 
 ### `GET /leaderboard`
@@ -180,7 +183,7 @@ Auth required. Returns users ordered by points with derived counts.
 {
   "leaderboard": [
     {
-      "user": { "id": 1, "username": "nova", "role": "Project Manager", "points": 42, "createdAt": "…" },
+      "user": { "id": 1, "username": "nova", "role": "Lead", "points": 42, "createdAt": "…" },
       "rank": 1,
       "completedTasks": 3,
       "reviews": 5
@@ -250,10 +253,11 @@ Colours must be 6-digit hex values (`#rrggbb`); `themeMode` must be `dark`,
 
 ## Stats
 
-### `GET /stats?range=30d|90d|all`
+### `GET /stats?range=7d|30d|90d|all`
 
-Auth required. `range` defaults to `30d` when omitted or unknown. All
-aggregates are computed in SQL. Response shape:
+Auth required. `range` defaults to `30d` when omitted or unknown. Supported
+windows are 7, 30 and 90 days, or `all`. All aggregates are computed in SQL.
+Response shape:
 
 ```json
 {
@@ -275,7 +279,7 @@ aggregates are computed in SQL. Response shape:
     "tasksByState": { "pending": 8, "auditing": 5, "completed": 18 },
     "tasksByApprovalState": { "proposed": 7, "approved": 23, "changes_requested": 1 },
     "tasksByType": { "feature": 14, "bug": 8, "fix": 6, "research": 3 },
-    "roleDistribution": { "Project Manager": 1, "Frontend Engineer": 5 },
+    "roleDistribution": { "Lead": 1, "Frontend Engineer": 5 },
     "projects": [
       {
         "projectId": 2,
@@ -308,7 +312,7 @@ aggregates are computed in SQL. Response shape:
 }
 ```
 
-`builders` counts users with a non-manager role. `completionRate` is a
+`builders` counts users with a non-lead role. `completionRate` is a
 percentage. `avgCycleHours` is the mean `completedAt - createdAt` over tasks
 completed inside the range.
 
@@ -324,7 +328,7 @@ Auth required. Returns all projects newest first.
 
 ### `POST /project`
 
-Auth required, **Project Manager only**. Body:
+Auth required, **Lead only**. Body:
 
 ```json
 { "name": "Aurora", "description": "Internal tooling", "ttl": 1440 }
@@ -339,6 +343,112 @@ Auth required, **Project Manager only**. Body:
 ### `GET /project/{id}`
 
 Auth required. Returns the `Project` object directly.
+
+## Project membership
+
+Project membership gates chat access only. Projects and tasks remain visible to
+every authenticated user. The project lead is `projects.creatorId` and is
+backfilled as the `lead` member when the project is created.
+
+### `GET /project/{id}/members`
+
+Auth required. Returns `{ "members": [...] }`:
+
+```json
+{
+  "members": [
+    {
+      "userId": 1,
+      "username": "nova",
+      "role": "Lead",
+      "projectRole": "lead",
+      "joinedAt": "2026-11-02T08:15:43Z"
+    }
+  ]
+}
+```
+
+### `POST /project/{id}/members`
+
+Auth required, **project lead only**. Body `{ "userId": 7 }`. Returns the full
+member list. Returns `409` if the person is already a member.
+
+### `DELETE /project/{id}/members/{userId}`
+
+Auth required, **project lead only**. Returns the remaining member list and
+removes the person from every project room.
+
+## Chat
+
+Chat rooms have `kind` `dm`, `project` or `open` and `visibility` `private` or
+`discoverable`. DM and project rooms are always private. A room object includes
+its `members`, optional `lastMessage`, and the caller's `unreadCount`.
+
+### Room endpoints
+
+| Method | Path | Notes |
+| --- | --- | --- |
+| `GET` | `/chats` | Rooms the caller belongs to, newest activity first |
+| `GET` | `/chat/{id}` | One room; members only |
+| `GET` | `/chat/unread` | `{ "unread": 12 }` across all rooms |
+| `GET` | `/chat/discover` | Discoverable open groups the caller has not joined |
+| `GET` | `/chat/requests` | The caller's group requests |
+| `POST` | `/chat/dm` | `{ "userId": 7 }`; opens or reuses the 1:1 room |
+| `POST` | `/chat` | Create an open group (auto-approved) |
+| `PUT` | `/chat/{id}` | `{ "name", "purpose", "visibility" }` |
+| `DELETE` | `/chat/{id}` | Archive a project/open room |
+| `POST` | `/chat/{id}/join` | Join a discoverable open group |
+| `POST` | `/chat/{id}/leave` | Leave a room |
+| `POST` | `/chat/{id}/members` | `{ "userId": 7 }`; managers only |
+| `DELETE` | `/chat/{id}/members/{userId}` | Managers only |
+
+Create an open group:
+
+```json
+{
+  "name": "Frontend guild",
+  "purpose": "Patterns and reviews",
+  "visibility": "discoverable",
+  "inviteIds": [7, 9]
+}
+```
+
+`POST /chat` returns `201` with `{ "room": {...}, "request": {...} }`. The
+request status is `approved` for now; the row is kept for a future admin queue.
+`visibility` defaults to `discoverable`.
+
+### Messages
+
+| Method | Path | Notes |
+| --- | --- | --- |
+| `GET` | `/chat/{id}/messages?before=&limit=` | Ascending history; `limit` 1–100 (default 50) |
+| `POST` | `/chat/{id}/messages` | `{ "body": "…", "attachmentIds": [1] }` |
+| `PATCH` | `/chat/message/{id}` | Edit your own message |
+| `DELETE` | `/chat/message/{id}` | Soft-delete; managers may delete any message |
+| `POST` | `/chat/{id}/read` | `{ "messageId": 42 }` |
+
+A message needs text or at least one image, has at most 4000 characters, and can
+carry at most four images. `before` is a message ID and returns older rows.
+Deleted messages come back with an empty body and `deletedAt` set.
+
+### Images
+
+| Method | Path | Notes |
+| --- | --- | --- |
+| `POST` | `/chat/{id}/attachments` | `multipart/form-data` with a `file` field |
+| `GET` | `/attachments/{id}` | Authenticated image bytes |
+
+Uploads accept PNG, JPEG, GIF and WebP. This is the only multipart endpoint.
+Attachments are stored under `RUDY_UPLOAD_DIR` and only current room members can
+read them.
+
+### Live events
+
+`GET /chat/events` is an authenticated SSE stream. Each frame has an `event`
+name and JSON `data` with the affected `roomId`; events include `room.created`,
+`room.updated`, `room.archived`, `message.created`, `message.updated`,
+`message.deleted`, `member.added` and `member.removed`. Native `EventSource`
+cannot send the bearer header, so the client reads the stream from `fetch`.
 
 ## Tasks
 
@@ -417,12 +527,12 @@ Returns `201` with `{ "task": { … } }`. The task starts as
 
 ### `POST /task/{id}/approve`
 
-Auth required, **Project Manager only**. No body. Marks the proposal
+Auth required, **Lead only**. No body. Marks the proposal
 `approved`. Returns `{ "task": { … } }`. `409` if already approved or completed.
 
 ### `POST /task/{id}/reject`
 
-Auth required, **Project Manager only**. Body:
+Auth required, **Lead only**. Body:
 
 ```json
 { "reason": "Split this into a frontend and backend task" }
@@ -433,7 +543,7 @@ the reason. Returns `{ "task": { … } }`.
 
 ### `POST /task/{id}/assign`
 
-Auth required, **Project Manager only**. Body uses snake_case:
+Auth required, **Lead only**. Body uses snake_case:
 
 ```json
 { "assignee_id": 3 }
@@ -443,7 +553,7 @@ The task must already be approved (409). Returns `{ "task": { … } }`.
 
 ### `POST /task/{id}/done/{gate}`
 
-Auth required; assignee or Project Manager. `gate` is `code`, `tests` or
+Auth required; assignee or Lead. `gate` is `code`, `tests` or
 `documentation`. The task must be approved and `pending` (409 otherwise). Body:
 
 ```json
@@ -455,7 +565,7 @@ are rejected (422). Returns `{ "task": { … } }`.
 
 ### `POST /task/{id}/done/reviewer`
 
-Auth required; assignee or Project Manager. Same approval + pending
+Auth required; assignee or Lead. Same approval + pending
 precondition as gates. Body uses snake_case:
 
 ```json
@@ -467,12 +577,12 @@ listed (409). Returns `{ "task": { … } }`.
 
 ### `DELETE /task/{id}/reviewer/{userId}`
 
-Auth required; assignee or Project Manager, task approved and `pending`. No
+Auth required; assignee or Lead, task approved and `pending`. No
 body. Returns `{ "task": { … } }`.
 
 ### `POST /task/{id}/submit`
 
-Auth required; assignee or Project Manager. No body. Requires:
+Auth required; assignee or Lead. No body. Requires:
 
 - task approved and `pending`;
 - all three acceptance gates non-empty;
@@ -496,7 +606,7 @@ in `auditing` (409). Body:
 
 ### `POST /task/{id}/complete`
 
-Auth required, **Project Manager only**. No body. Completion runs in one
+Auth required, **Lead only**. No body. Completion runs in one
 database transaction and requires:
 
 - task not already completed;
@@ -528,7 +638,7 @@ repeating the request returns `409` rather than minting again.
 # register and capture the token
 TOKEN=$(curl -s localhost:8080/register \
   -H 'Content-Type: application/json' \
-  -d '{"username":"nova","password":"password123","role":"Project Manager"}' \
+  -d '{"username":"nova","password":"password123","role":"Lead"}' \
   | jq -r .token)
 
 # create a project

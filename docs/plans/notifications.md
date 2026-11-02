@@ -13,7 +13,7 @@ when someone is waiting on them, or when their work is blocked, Rudy should say 
 - As a builder, I want to know which of my tasks are blocked and by whom, so I can
   unblock myself or ask for help.
 - As a reviewer, I want a reminder when a task is waiting on my decision.
-- As a manager, I want a digest of proposals awaiting approval and reviews that
+- As a lead, I want a digest of proposals awaiting approval and reviews that
   have stalled.
 - As a user, I want to mute categories I do not care about.
 
@@ -21,13 +21,13 @@ when someone is waiting on them, or when their work is blocked, Rudy should say 
 
 | Event | Recipients | Default channel |
 | --- | --- | --- |
-| `task.proposed` | Project managers | In-app |
+| `task.proposed` | Project leads | In-app |
 | `task.approved` | Creator, assignee | In-app |
 | `task.changes_requested` | Creator | In-app |
 | `task.assigned` | Assignee | In-app + email |
 | `task.reviewer_added` | Reviewer | In-app |
-| `task.submitted` | Reviewers, managers | In-app + email |
-| `review.approved` | Assignee, managers | In-app |
+| `task.submitted` | Reviewers, leads | In-app + email |
+| `review.approved` | Assignee, leads | In-app |
 | `review.changes_requested` | Assignee | In-app + email |
 | `task.completed` | Assignee, reviewers, creator | In-app |
 | `points.minted` | Awarded users | In-app |

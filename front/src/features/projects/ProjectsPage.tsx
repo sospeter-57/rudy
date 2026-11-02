@@ -35,7 +35,7 @@ export function CreateProjectDialog({ open, onClose }: { open: boolean; onClose:
     <Dialog
       open={open}
       onClose={onClose}
-      eyebrow="Project Manager only"
+      eyebrow="Lead only"
       title="Open a new project"
       footer={
         <>
@@ -57,7 +57,7 @@ export function CreateProjectDialog({ open, onClose }: { open: boolean; onClose:
           <Input id="project-ttl" type="number" min={30} step={30} value={ttl} onChange={(e) => setTtl(Number(e.target.value))} />
         </Field>
         {error ? <p className="form-error">{error}</p> : null}
-        <p className="form-note">Only Project Managers can create projects. Everyone can propose tasks inside them.</p>
+        <p className="form-note">Only Leads can create projects. Everyone can propose tasks inside them.</p>
       </div>
     </Dialog>
   )
@@ -93,7 +93,7 @@ export function ProjectsPage() {
           canCreateProject(me) ? (
             <Button onClick={() => setDialogOpen(true)}><Plus size={15} /> New project</Button>
           ) : (
-            <Badge tone="muted">Only a Project Manager can open a project</Badge>
+            <Badge tone="muted">Only a Lead can open a project</Badge>
           )
         }
       />
@@ -104,7 +104,7 @@ export function ProjectsPage() {
         <EmptyState
           icon={<FolderKanban size={22} />}
           title="No projects yet"
-          body={canCreateProject(me) ? 'Open the first project and let the team propose work.' : 'A Project Manager has not opened a project yet.'}
+          body={canCreateProject(me) ? 'Open the first project and let the team propose work.' : 'A Lead has not opened a project yet.'}
           action={canCreateProject(me) ? <Button onClick={() => setDialogOpen(true)}><Plus size={15} /> Create the first project</Button> : undefined}
         />
       ) : (

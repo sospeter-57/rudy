@@ -1,5 +1,5 @@
 export const ROLES = [
-  'Project Manager',
+  'Lead',
   'Database Engineer',
   'Frontend Engineer',
   'Backend Engineer',
@@ -110,7 +110,7 @@ export interface PreferencesInput {
   blendB: string
 }
 
-export type StatsRange = '30d' | '90d' | 'all'
+export type StatsRange = '7d' | '30d' | '90d' | 'all'
 
 export interface StatsTotals {
   users: number
@@ -190,6 +190,90 @@ export interface RegisterDraft {
   username: string
   password: string
   role: Role
+}
+
+// ---------- projects and chat ----------
+
+export type ProjectRole = 'lead' | 'member'
+export type RoomKind = 'dm' | 'project' | 'open'
+export type RoomVisibility = 'private' | 'discoverable'
+export type RoomStatus = 'active' | 'archived'
+
+export interface ProjectMember {
+  userId: number
+  username: string
+  role: Role
+  projectRole: ProjectRole
+  addedBy?: number
+  joinedAt: string
+}
+
+export interface ChatMember {
+  userId: number
+  username: string
+  role: Role
+  roomRole: 'owner' | 'member'
+  joinedAt: string
+}
+
+export interface ChatAttachment {
+  id: number
+  roomId: number
+  messageId?: number
+  filename: string
+  mime: string
+  sizeBytes: number
+  width?: number
+  height?: number
+  createdAt: string
+}
+
+export interface ChatMessage {
+  id: number
+  roomId: number
+  senderId: number
+  senderName: string
+  body: string
+  attachments: ChatAttachment[]
+  createdAt: string
+  editedAt?: string
+  deletedAt?: string
+}
+
+export interface ChatRoom {
+  id: number
+  kind: RoomKind
+  name?: string
+  purpose?: string
+  projectId?: number
+  projectName?: string
+  createdBy: number
+  visibility: RoomVisibility
+  status: RoomStatus
+  createdAt: string
+  archivedAt?: string
+  members?: ChatMember[]
+  lastMessage?: ChatMessage
+  unreadCount: number
+}
+
+export interface ChatRequest {
+  id: number
+  requesterId: number
+  requesterName: string
+  name: string
+  purpose: string
+  visibility: RoomVisibility
+  status: 'pending' | 'approved' | 'rejected'
+  roomId?: number
+  invites: number[]
+  createdAt: string
+  reviewedAt?: string
+}
+
+export interface OpenRoomResult {
+  room: ChatRoom
+  request: ChatRequest
 }
 
 export interface ApiErrorShape {

@@ -14,7 +14,7 @@ type User struct {
 type Role string
 
 const (
-	ProjectManager    Role = "Project Manager"
+	Lead              Role = "Lead"
 	DatabaseEngineer  Role = "Database Engineer"
 	FrontendEngineer  Role = "Frontend Engineer"
 	BackendEngineer   Role = "Backend Engineer"
@@ -26,7 +26,7 @@ const (
 )
 
 var Roles = []Role{
-	ProjectManager,
+	Lead,
 	DatabaseEngineer,
 	FrontendEngineer,
 	BackendEngineer,

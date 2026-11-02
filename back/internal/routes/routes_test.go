@@ -5,13 +5,19 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"image"
+	"image/png"
+	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
 	"rudy/internal/services"
+	"rudy/internal/storage"
 	"rudy/internal/transaction"
 )
 
@@ -20,6 +26,11 @@ type testAPI struct {
 }
 
 func newTestAPI(t *testing.T) *testAPI {
+	t.Helper()
+	return newTestAPIWithOrigins(t, nil)
+}
+
+func newTestAPIWithOrigins(t *testing.T, corsOrigins []string) *testAPI {
 	t.Helper()
 
 	db, err := transaction.Open(filepath.Join(t.TempDir(), "rudy.db"))
@@ -31,12 +42,19 @@ func newTestAPI(t *testing.T) *testAPI {
 		t.Fatalf("migrate: %v", err)
 	}
 
+	store, err := storage.NewLocal(filepath.Join(t.TempDir(), "uploads"))
+	if err != nil {
+		t.Fatalf("storage: %v", err)
+	}
+
 	handler := NewRouter(Deps{
 		Users:       services.NewUserService(db, time.Hour),
 		Projects:    services.NewProjectService(db),
 		Tasks:       services.NewTaskService(db),
 		Stats:       services.NewStatsService(db),
 		Preferences: services.NewPreferencesService(db),
+		Chat:        services.NewChatService(db, store, nil),
+		CORSOrigins: corsOrigins,
 	})
 
 	server := httptest.NewServer(handler)
@@ -88,7 +106,7 @@ func TestBearerSessionFlow(t *testing.T) {
 	status, payload := api.do(t, http.MethodPost, "/register", "", map[string]any{
 		"username": "nova",
 		"password": "password123",
-		"role":     "Project Manager",
+		"role":     "Lead",
 	})
 	if status != http.StatusCreated {
 		t.Fatalf("register status = %d (%v)", status, payload)
@@ -204,5 +222,194 @@ func TestGoogleAuthEndpoint(t *testing.T) {
 	}
 	if payload["token"] == nil {
 		t.Fatalf("expected a token, got %v", payload)
+	}
+}
+
+func TestCORSPolicy(t *testing.T) {
+	api := newTestAPIWithOrigins(t, []string{"https://app.example.com"})
+
+	client := &http.Client{}
+	request, _ := http.NewRequest(http.MethodOptions, api.server.URL+"/health", nil)
+	request.Header.Set("Origin", "https://app.example.com")
+	request.Header.Set("Access-Control-Request-Method", "GET")
+	request.Header.Set("Access-Control-Request-Headers", "Authorization")
+	response, err := client.Do(request)
+	if err != nil {
+		t.Fatalf("preflight: %v", err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusNoContent {
+		t.Fatalf("preflight status = %d, want 204", response.StatusCode)
+	}
+	if got := response.Header.Get("Access-Control-Allow-Origin"); got != "https://app.example.com" {
+		t.Fatalf("preflight ACAO = %q", got)
+	}
+	if got := response.Header.Get("Access-Control-Allow-Methods"); got == "" {
+		t.Fatalf("expected Access-Control-Allow-Methods")
+	}
+	if got := response.Header.Get("Access-Control-Allow-Headers"); got == "" {
+		t.Fatalf("expected Access-Control-Allow-Headers")
+	}
+	if got := response.Header.Get("Vary"); got == "" {
+		t.Fatalf("expected Vary: Origin")
+	}
+
+	request, _ = http.NewRequest(http.MethodGet, api.server.URL+"/health", nil)
+	request.Header.Set("Origin", "https://app.example.com")
+	response, err = client.Do(request)
+	if err != nil {
+		t.Fatalf("get with origin: %v", err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("get status = %d, want 200", response.StatusCode)
+	}
+	if got := response.Header.Get("Access-Control-Allow-Origin"); got != "https://app.example.com" {
+		t.Fatalf("get ACAO = %q", got)
+	}
+
+	request, _ = http.NewRequest(http.MethodGet, api.server.URL+"/health", nil)
+	request.Header.Set("Origin", "https://evil.example.com")
+	response, err = client.Do(request)
+	if err != nil {
+		t.Fatalf("get with disallowed origin: %v", err)
+	}
+	response.Body.Close()
+	if response.Header.Get("Access-Control-Allow-Origin") != "" {
+		t.Fatalf("disallowed origin should not receive ACAO")
+	}
+
+	api = newTestAPIWithOrigins(t, []string{"*"})
+	request, _ = http.NewRequest(http.MethodGet, api.server.URL+"/health", nil)
+	request.Header.Set("Origin", "https://any.example.com")
+	response, err = client.Do(request)
+	if err != nil {
+		t.Fatalf("get wildcard: %v", err)
+	}
+	response.Body.Close()
+	if got := response.Header.Get("Access-Control-Allow-Origin"); got != "*" {
+		t.Fatalf("wildcard ACAO = %q", got)
+	}
+}
+
+func TestChatEndpointsAndUploads(t *testing.T) {
+	api := newTestAPI(t)
+
+	register := func(username string) (int64, string) {
+		t.Helper()
+		status, payload := api.do(t, http.MethodPost, "/register", "", map[string]any{
+			"username": username,
+			"password": "password123",
+			"role":     "Frontend Engineer",
+		})
+		if status != http.StatusCreated {
+			t.Fatalf("register %s: %d (%v)", username, status, payload)
+		}
+		user, _ := payload["user"].(map[string]any)
+		id, _ := user["id"].(float64)
+		token, _ := payload["token"].(string)
+		if id == 0 || token == "" {
+			t.Fatalf("register %s returned %v", username, payload)
+		}
+		return int64(id), token
+	}
+
+	_, aliceToken := register("alice")
+	bobID, bobToken := register("bob")
+
+	status, payload := api.do(t, http.MethodPost, "/chat/dm", aliceToken, map[string]any{"userId": bobID})
+	if status != http.StatusOK {
+		t.Fatalf("open dm: %d (%v)", status, payload)
+	}
+	room, _ := payload["room"].(map[string]any)
+	roomID, _ := room["id"].(float64)
+	if roomID == 0 {
+		t.Fatalf("open dm returned %v", payload)
+	}
+
+	status, payload = api.do(t, http.MethodPost, "/chat/"+strconv.FormatInt(int64(roomID), 10)+"/messages", aliceToken, map[string]any{
+		"body": "hello bob",
+	})
+	if status != http.StatusCreated {
+		t.Fatalf("send message: %d (%v)", status, payload)
+	}
+	message, _ := payload["message"].(map[string]any)
+	messageID, _ := message["id"].(float64)
+	if messageID == 0 {
+		t.Fatalf("send message returned %v", payload)
+	}
+
+	status, payload = api.do(t, http.MethodGet, "/chat/"+strconv.FormatInt(int64(roomID), 10)+"/messages", bobToken, nil)
+	if status != http.StatusOK {
+		t.Fatalf("list messages: %d (%v)", status, payload)
+	}
+	messages, _ := payload["messages"].([]any)
+	if len(messages) != 1 {
+		t.Fatalf("messages = %v", payload)
+	}
+
+	status, payload = api.do(t, http.MethodGet, "/chat/unread", bobToken, nil)
+	if unread, _ := payload["unread"].(float64); status != http.StatusOK || unread != 1 {
+		t.Fatalf("unread = %d (%v)", status, payload)
+	}
+
+	var imageBytes bytes.Buffer
+	if err := png.Encode(&imageBytes, image.NewRGBA(image.Rect(0, 0, 2, 2))); err != nil {
+		t.Fatalf("encode png: %v", err)
+	}
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("file", "shot.png")
+	if err != nil {
+		t.Fatalf("multipart: %v", err)
+	}
+	if _, err := part.Write(imageBytes.Bytes()); err != nil {
+		t.Fatalf("write image: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close multipart: %v", err)
+	}
+
+	request, err := http.NewRequest(http.MethodPost, api.server.URL+"/chat/"+strconv.FormatInt(int64(roomID), 10)+"/attachments", &body)
+	if err != nil {
+		t.Fatalf("upload request: %v", err)
+	}
+	request.Header.Set("Content-Type", writer.FormDataContentType())
+	request.Header.Set("Authorization", "Bearer "+aliceToken)
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("upload: %v", err)
+	}
+	uploadPayload := map[string]any{}
+	_ = json.NewDecoder(response.Body).Decode(&uploadPayload)
+	response.Body.Close()
+	if response.StatusCode != http.StatusCreated {
+		t.Fatalf("upload status = %d (%v)", response.StatusCode, uploadPayload)
+	}
+	attachment, _ := uploadPayload["attachment"].(map[string]any)
+	attachmentID, _ := attachment["id"].(float64)
+	if attachmentID == 0 {
+		t.Fatalf("upload returned %v", uploadPayload)
+	}
+
+	request, _ = http.NewRequest(http.MethodGet, api.server.URL+"/attachments/"+strconv.FormatInt(int64(attachmentID), 10), nil)
+	request.Header.Set("Authorization", "Bearer "+bobToken)
+	response, err = http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("read attachment: %v", err)
+	}
+	data, _ := io.ReadAll(response.Body)
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK || response.Header.Get("Content-Type") != "image/png" {
+		t.Fatalf("attachment status = %d type=%q", response.StatusCode, response.Header.Get("Content-Type"))
+	}
+	if !bytes.Equal(data, imageBytes.Bytes()) {
+		t.Fatal("attachment bytes did not round-trip")
+	}
+
+	status, _ = api.do(t, http.MethodGet, "/attachments/"+strconv.FormatInt(int64(attachmentID), 10), "", nil)
+	if status != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated attachment status = %d, want 401", status)
 	}
 }

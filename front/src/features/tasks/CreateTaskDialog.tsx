@@ -56,7 +56,7 @@ export function CreateTaskDialog({
     onSuccess: (task) => {
       queryClient.invalidateQueries({ queryKey: ['tasks'] })
       queryClient.invalidateQueries({ queryKey: ['project', selectedProject] })
-      toast('Proposal sent', 'A Project Manager must approve it before work starts.', 'gold')
+      toast('Proposal sent', 'A Lead must approve it before work starts.', 'gold')
       setDescription('')
       setPoints(20)
       setDependencies([])
@@ -116,7 +116,7 @@ export function CreateTaskDialog({
             rows={4}
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            placeholder="Be specific. The manager approves this as the definition of done."
+            placeholder="Be specific. The lead approves this as the definition of done."
           />
         </Field>
 
@@ -161,7 +161,7 @@ export function CreateTaskDialog({
 
         {error ? <p className="form-error">{error}</p> : null}
         <p className="form-note">
-          Proposals start as <strong>Awaiting approval</strong>. The manager decides whether the task is fit to be worked on,
+          Proposals start as <strong>Awaiting approval</strong>. The lead decides whether the task is fit to be worked on,
           and only then can it be assigned and started.
         </p>
       </div>
