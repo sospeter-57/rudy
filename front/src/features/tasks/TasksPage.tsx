@@ -6,6 +6,7 @@ import { allReviewersApproved, gatesComplete, reviewProgress } from '@/lib/permi
 import { pointsLabel, shortId } from '@/lib/format'
 import { PageHeader } from '@/components/layout'
 import { Badge, Button, EmptyState, Input, Spinner } from '@/components/ui'
+import { toast } from '@/lib/toast'
 import { GateDots, ReviewPips, StateBadge, TypeBadge } from '@/components/task'
 import { CreateTaskDialog } from './CreateTaskDialog'
 import { cx } from '@/lib/cx'
@@ -33,11 +34,15 @@ export function TasksPage() {
 
   useEffect(() => {
     if (params.get('new') === '1' && me) {
-      setDialogOpen(true)
       params.delete('new')
       setParams(params, { replace: true })
+      if (projects.length === 0) {
+        toast('Create a project first', 'Open a project as a Lead before proposing tasks.', 'red')
+        return
+      }
+      setDialogOpen(true)
     }
-  }, [params, setParams, me])
+  }, [params, setParams, me, projects.length])
 
   const projectById = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects])
   const userById = useMemo(() => new Map(users.map((u) => [u.id, u])), [users])
@@ -83,7 +88,13 @@ export function TasksPage() {
             <Badge tone="muted"><CheckCircle2 size={11} /> {buckets.completed.length} completed</Badge>
           </>
         }
-        actions={me ? <Button onClick={() => setDialogOpen(true)}><Plus size={15} /> New task</Button> : null}
+        actions={me ? <Button onClick={() => {
+          if (projects.length === 0) {
+            toast('Create a project first', 'Open a project as a Lead before proposing tasks.', 'red')
+            return
+          }
+          setDialogOpen(true)
+        }}><Plus size={15} /> New task</Button> : null}
       />
 
       <div className="task-toolbar">
