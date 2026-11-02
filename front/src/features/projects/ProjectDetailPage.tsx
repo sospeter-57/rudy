@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, Clock, MessageSquare, Plus, Trash2, UserPlus, Users } from 'lucide-react'
-import { useMe, useProject, useProjectChats, useProjectMembers, useTasks, useUsers } from '@/lib/hooks'
+import { ArrowLeft, Check, Clock, MessageSquare, Plus, Trash2, UserPlus, Users, X } from 'lucide-react'
+import { useMe, useProject, useProjectChats, useProjectJoinRequests, useProjectMembers, useTasks, useUsers } from '@/lib/hooks'
 import { minutesLabel, shortId } from '@/lib/format'
 import { PageHeader } from '@/components/layout'
 import { Badge, Button, Dialog, EmptyState, Field, Input, Select, Spinner, Stat, Textarea } from '@/components/ui'
@@ -21,10 +21,13 @@ export function ProjectDetailPage() {
   const { data: users = [] } = useUsers()
   const { data: members = [] } = useProjectMembers(projectId)
   const { data: chats = [] } = useProjectChats(projectId, !!me)
+  const isProjectLead = !!me && project?.creatorId === me.id
+  const { data: joinRequests = [] } = useProjectJoinRequests(projectId, isProjectLead)
   const queryClient = useQueryClient()
   const [dialogOpen, setDialogOpen] = useState(false)
   const [memberOpen, setMemberOpen] = useState(false)
   const [chatOpen, setChatOpen] = useState(false)
+  const [requestBusy, setRequestBusy] = useState(false)
 
   const creator = useMemo(() => users.find((u) => u.id === project?.creatorId), [users, project])
 
@@ -47,7 +50,7 @@ export function ProjectDetailPage() {
   const openPoints = tasks.filter((task) => task.taskState !== 'completed').reduce((sum, task) => sum + task.points, 0)
   const paidPoints = completed.reduce((sum, task) => sum + task.points, 0)
   const proposed = tasks.filter((task) => task.approvalState === 'proposed' || task.approvalState === 'changes_requested')
-  const isLead = !!me && project.creatorId === me.id
+  const isLead = isProjectLead
   const isMember = !!me && members.some((member) => member.userId === me.id)
   const memberIDs = new Set(members.map((member) => member.userId))
   const addableUsers = users.filter((user) => !memberIDs.has(user.id))
@@ -104,6 +107,25 @@ export function ProjectDetailPage() {
             <Button size="sm" variant="outline" onClick={() => setMemberOpen(true)}>
               <UserPlus size={14} /> Add member
             </Button>
+          ) : me && !isMember ? (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={requestBusy}
+              onClick={async () => {
+                setRequestBusy(true)
+                try {
+                  await api.requestProjectJoin(project.id)
+                  toast('Join request sent', 'The project lead will review it.', 'gold')
+                } catch (err) {
+                  toast('Could not request to join', err instanceof Error ? err.message : undefined, 'red')
+                } finally {
+                  setRequestBusy(false)
+                }
+              }}
+            >
+              {requestBusy ? <Spinner label="Requesting" /> : <UserPlus size={14} />} Request to join
+            </Button>
           ) : null}
         </header>
         <p className="form-note">
@@ -147,6 +169,52 @@ export function ProjectDetailPage() {
             ))}
           </div>
         )}
+        {isLead && joinRequests.filter((request) => request.status === 'pending').length > 0 ? (
+          <div className="member-list" style={{ marginTop: '1rem' }}>
+            <span className="eyebrow">Pending join requests</span>
+            {joinRequests
+              .filter((request) => request.status === 'pending')
+              .map((request) => (
+                <div key={request.id} className="member-list__row">
+                  <Users size={15} />
+                  <span className="member-list__who">
+                    <strong>{request.requesterName}</strong>
+                    <small>Requested to join</small>
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={async () => {
+                      try {
+                        await api.approveProjectJoin(project.id, request.id)
+                        toast('Member added', request.requesterName, 'gold')
+                        void queryClient.invalidateQueries({ queryKey: ['project-members', project.id] })
+                        void queryClient.invalidateQueries({ queryKey: ['project-join-requests', project.id] })
+                      } catch (err) {
+                        toast('Could not approve', err instanceof Error ? err.message : undefined, 'red')
+                      }
+                    }}
+                  >
+                    <Check size={13} /> Approve
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="quiet"
+                    onClick={async () => {
+                      try {
+                        await api.rejectProjectJoin(project.id, request.id)
+                        void queryClient.invalidateQueries({ queryKey: ['project-join-requests', project.id] })
+                      } catch (err) {
+                        toast('Could not reject', err instanceof Error ? err.message : undefined, 'red')
+                      }
+                    }}
+                  >
+                    <X size={13} /> Reject
+                  </Button>
+                </div>
+              ))}
+          </div>
+        ) : null}
       </section>
 
       <section className="panel">

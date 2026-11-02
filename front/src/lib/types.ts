@@ -208,6 +208,19 @@ export interface ProjectMember {
   joinedAt: string
 }
 
+export type ProjectJoinRequestStatus = 'pending' | 'approved' | 'rejected'
+
+export interface ProjectJoinRequest {
+  id: number
+  projectId: number
+  requesterId: number
+  requesterName: string
+  status: ProjectJoinRequestStatus
+  createdAt: string
+  reviewedBy?: number
+  reviewedAt?: string
+}
+
 export interface ChatMember {
   userId: number
   username: string

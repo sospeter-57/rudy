@@ -85,6 +85,14 @@ export function useProjectMembers(projectId: number) {
   })
 }
 
+export function useProjectJoinRequests(projectId: number, enabled = true) {
+  return useQuery({
+    queryKey: ['project-join-requests', projectId],
+    queryFn: () => api.listProjectJoinRequests(projectId),
+    enabled: projectId > 0 && enabled,
+  })
+}
+
 export function useProjectChats(projectId: number, enabled = true) {
   return useQuery({
     queryKey: ['project-chats', projectId],

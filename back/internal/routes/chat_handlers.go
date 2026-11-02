@@ -650,3 +650,79 @@ func (s *server) removeProjectMember(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string][]models.ProjectMember{"members": members})
 }
+
+func (s *server) requestProjectJoin(w http.ResponseWriter, r *http.Request) {
+	if s.projects == nil {
+		writeError(w, http.StatusNotImplemented, "project service not configured")
+		return
+	}
+	id, ok := pathInt(w, r, "id")
+	if !ok {
+		return
+	}
+	request, err := s.projects.RequestJoin(r.Context(), id, s.currentUser(r).ID)
+	if err != nil {
+		s.respondError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]models.ProjectJoinRequest{"request": request})
+}
+
+func (s *server) listProjectJoinRequests(w http.ResponseWriter, r *http.Request) {
+	if s.projects == nil {
+		writeError(w, http.StatusNotImplemented, "project service not configured")
+		return
+	}
+	id, ok := pathInt(w, r, "id")
+	if !ok {
+		return
+	}
+	requests, err := s.projects.JoinRequests(r.Context(), id, s.currentUser(r).ID)
+	if err != nil {
+		s.respondError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string][]models.ProjectJoinRequest{"requests": requests})
+}
+
+func (s *server) approveProjectJoinRequest(w http.ResponseWriter, r *http.Request) {
+	if s.projects == nil {
+		writeError(w, http.StatusNotImplemented, "project service not configured")
+		return
+	}
+	id, ok := pathInt(w, r, "id")
+	if !ok {
+		return
+	}
+	requestID, ok := pathInt(w, r, "requestId")
+	if !ok {
+		return
+	}
+	request, err := s.projects.ReviewJoinRequest(r.Context(), id, requestID, s.currentUser(r).ID, true)
+	if err != nil {
+		s.respondError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]models.ProjectJoinRequest{"request": request})
+}
+
+func (s *server) rejectProjectJoinRequest(w http.ResponseWriter, r *http.Request) {
+	if s.projects == nil {
+		writeError(w, http.StatusNotImplemented, "project service not configured")
+		return
+	}
+	id, ok := pathInt(w, r, "id")
+	if !ok {
+		return
+	}
+	requestID, ok := pathInt(w, r, "requestId")
+	if !ok {
+		return
+	}
+	request, err := s.projects.ReviewJoinRequest(r.Context(), id, requestID, s.currentUser(r).ID, false)
+	if err != nil {
+		s.respondError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]models.ProjectJoinRequest{"request": request})
+}

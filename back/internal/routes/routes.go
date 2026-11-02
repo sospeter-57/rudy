@@ -78,6 +78,10 @@ func NewRouter(deps Deps) http.Handler {
 	mux.Handle("GET /project/{id}/members", protected(s.listProjectMembers))
 	mux.Handle("POST /project/{id}/members", protected(s.addProjectMember))
 	mux.Handle("DELETE /project/{id}/members/{userId}", protected(s.removeProjectMember))
+	mux.Handle("POST /project/{id}/join-requests", protected(s.requestProjectJoin))
+	mux.Handle("GET /project/{id}/join-requests", protected(s.listProjectJoinRequests))
+	mux.Handle("POST /project/{id}/join-requests/{requestId}/approve", protected(s.approveProjectJoinRequest))
+	mux.Handle("POST /project/{id}/join-requests/{requestId}/reject", protected(s.rejectProjectJoinRequest))
 	mux.Handle("GET /project/{id}/chats", protected(s.listProjectChats))
 	mux.Handle("POST /project/{id}/chats", protected(s.createProjectChat))
 

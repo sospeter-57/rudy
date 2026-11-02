@@ -12,6 +12,7 @@ import {
   type PreferencesInput,
   type Project,
   type ProjectDraft,
+  type ProjectJoinRequest,
   type ProjectMember,
   type RegisterDraft,
   type Role,
@@ -92,6 +93,10 @@ export interface ApiClient {
   listProjectMembers(projectId: number): Promise<ProjectMember[]>
   addProjectMember(projectId: number, userId: number): Promise<ProjectMember[]>
   removeProjectMember(projectId: number, userId: number): Promise<ProjectMember[]>
+  requestProjectJoin(projectId: number): Promise<ProjectJoinRequest>
+  listProjectJoinRequests(projectId: number): Promise<ProjectJoinRequest[]>
+  approveProjectJoin(projectId: number, requestId: number): Promise<ProjectJoinRequest>
+  rejectProjectJoin(projectId: number, requestId: number): Promise<ProjectJoinRequest>
   listProjectChats(projectId: number): Promise<ChatRoom[]>
   createProjectChat(projectId: number, draft: ProjectRoomDraft): Promise<ChatRoom>
 
@@ -405,6 +410,22 @@ export const api: ApiClient = {
         method: 'DELETE',
       })
     ).members
+  },
+
+  async requestProjectJoin(projectId) {
+    return (await request<{ request: ProjectJoinRequest }>(`/project/${projectId}/join-requests`, { method: 'POST' })).request
+  },
+
+  async listProjectJoinRequests(projectId) {
+    return (await request<{ requests: ProjectJoinRequest[] }>(`/project/${projectId}/join-requests`, { method: 'GET' })).requests
+  },
+
+  async approveProjectJoin(projectId, requestId) {
+    return (await request<{ request: ProjectJoinRequest }>(`/project/${projectId}/join-requests/${requestId}/approve`, { method: 'POST' })).request
+  },
+
+  async rejectProjectJoin(projectId, requestId) {
+    return (await request<{ request: ProjectJoinRequest }>(`/project/${projectId}/join-requests/${requestId}/reject`, { method: 'POST' })).request
   },
 
   async listProjectChats(projectId) {

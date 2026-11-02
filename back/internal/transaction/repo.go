@@ -740,6 +740,117 @@ func (r *Repo) UpsertPreferences(ctx context.Context, userID int64, preferences 
 	return err
 }
 
+// ---------- project join requests ----------
+
+func (r *Repo) CreateProjectJoinRequest(ctx context.Context, projectID, requesterID int64, createdAt time.Time) (int64, error) {
+	result, err := r.q.ExecContext(ctx, `
+		INSERT INTO project_join_requests (project_id, requester_id, status, created_at)
+		VALUES (?, ?, 'pending', ?)`, projectID, requesterID, formatTime(createdAt))
+	if err != nil {
+		return 0, err
+	}
+	return result.LastInsertId()
+}
+
+func (r *Repo) ProjectJoinRequests(ctx context.Context, projectID int64) ([]models.ProjectJoinRequest, error) {
+	rows, err := r.q.QueryContext(ctx, `
+		SELECT r.id, r.project_id, r.requester_id, u.username, r.status, r.created_at, r.reviewed_by, r.reviewed_at
+		FROM project_join_requests r
+		JOIN users u ON u.id = r.requester_id
+		WHERE r.project_id = ?
+		ORDER BY CASE WHEN r.status = 'pending' THEN 0 ELSE 1 END, r.created_at DESC`, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	requests := []models.ProjectJoinRequest{}
+	for rows.Next() {
+		var (
+			request    models.ProjectJoinRequest
+			status     string
+			createdAt  string
+			reviewedBy sql.NullInt64
+			reviewedAt sql.NullString
+		)
+		if err := rows.Scan(&request.ID, &request.ProjectID, &request.RequesterID, &request.RequesterName, &status, &createdAt, &reviewedBy, &reviewedAt); err != nil {
+			return nil, err
+		}
+		request.Status = models.ProjectJoinRequestStatus(status)
+		request.CreatedAt = parseTime(createdAt)
+		if reviewedBy.Valid {
+			value := reviewedBy.Int64
+			request.ReviewedBy = &value
+		}
+		if reviewedAt.Valid {
+			value := parseTime(reviewedAt.String)
+			request.ReviewedAt = &value
+		}
+		requests = append(requests, request)
+	}
+	return requests, rows.Err()
+}
+
+func (r *Repo) ProjectJoinRequestByID(ctx context.Context, id int64) (models.ProjectJoinRequest, error) {
+	row := r.q.QueryRowContext(ctx, `
+		SELECT r.id, r.project_id, r.requester_id, u.username, r.status, r.created_at, r.reviewed_by, r.reviewed_at
+		FROM project_join_requests r
+		JOIN users u ON u.id = r.requester_id
+		WHERE r.id = ?`, id)
+	var (
+		request    models.ProjectJoinRequest
+		status     string
+		createdAt  string
+		reviewedBy sql.NullInt64
+		reviewedAt sql.NullString
+	)
+	err := row.Scan(&request.ID, &request.ProjectID, &request.RequesterID, &request.RequesterName, &status, &createdAt, &reviewedBy, &reviewedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return models.ProjectJoinRequest{}, models.NotFound("join request not found")
+	}
+	if err != nil {
+		return models.ProjectJoinRequest{}, err
+	}
+	request.Status = models.ProjectJoinRequestStatus(status)
+	request.CreatedAt = parseTime(createdAt)
+	if reviewedBy.Valid {
+		value := reviewedBy.Int64
+		request.ReviewedBy = &value
+	}
+	if reviewedAt.Valid {
+		value := parseTime(reviewedAt.String)
+		request.ReviewedAt = &value
+	}
+	return request, nil
+}
+
+func (r *Repo) HasPendingProjectJoinRequest(ctx context.Context, projectID, requesterID int64) (bool, error) {
+	var count int
+	err := r.q.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM project_join_requests WHERE project_id = ? AND requester_id = ? AND status = 'pending'`,
+		projectID, requesterID).Scan(&count)
+	return count > 0, err
+}
+
+func (r *Repo) ReviewProjectJoinRequest(ctx context.Context, id int64, status models.ProjectJoinRequestStatus, reviewerID int64, reviewedAt time.Time) error {
+	result, err := r.q.ExecContext(ctx, `
+		UPDATE project_join_requests
+		SET status = ?, reviewed_by = ?, reviewed_at = ?
+		WHERE id = ? AND status = 'pending'`,
+		status, reviewerID, formatTime(reviewedAt), id)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return models.Conflict("join request is no longer pending")
+	}
+	return nil
+}
+
 func (r *Repo) requireAffected(result sql.Result, message string) error {
 	affected, err := result.RowsAffected()
 	if err != nil {
