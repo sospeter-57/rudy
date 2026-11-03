@@ -4,11 +4,7 @@
 
 <h1 align="center">Rudy</h1>
 
-Rudy is a project and task command deck where completed work earns points. A
-Lead approves proposals, builders record acceptance evidence, reviewers
-sign off, and the ledger mints points exactly once when a task is completed.
-Teams can also talk in direct messages, lead-curated project rooms and open
-groups, with text, images and live updates.
+Rudy is a command deck for running projects with a clear lifecycle: propose, approve, build, review, complete. Each finished task mints points once through an immutable ledger. Alongside the work board, teams can communicate in direct messages, curated project rooms, and open groups with text, images, and live updates. Built-in statistics make progress, contribution, while an AI layer reads what is happening and helps guide projects toward more successful outcomes—highlighting risks, surfacing patterns, and supporting better decisions as building moves forward.
 
 The repository contains:
 
