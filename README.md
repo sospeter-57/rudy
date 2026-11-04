@@ -6,7 +6,7 @@
 
 Rudy is a command deck for running projects with a clear lifecycle: propose, approve, build, review, complete. Each finished task mints points once through an immutable ledger. Alongside the work board, teams can communicate in direct messages, curated project rooms, and open groups with text, images, and live updates. Built-in statistics make progress, contribution, while an AI layer reads what is happening and helps guide projects toward more successful outcomes—highlighting risks, surfacing patterns, and supporting better decisions as building moves forward.
 
-The repository contains:
+The repostory contains:
 
 - `back/` — Go 1.26 HTTP API, SQLite, embedded SQL migrations, bearer-token sessions.
 - `front/` — React 19 + Vite + TypeScript client with TanStack Query, Zustand and Recharts.
